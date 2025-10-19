@@ -19,6 +19,7 @@ This guide covers all deployment options for QuartzDB, from local development to
 **Perfect for M1 MacBook with limited resources**
 
 **Pros:**
+
 - ✅ No local Docker installation needed
 - ✅ Full Docker-in-Docker support in cloud
 - ✅ Pre-configured development environment
@@ -62,11 +63,13 @@ python simple_vector_demo.py
 **For M1 Mac without Docker Desktop**
 
 **Pros:**
+
 - ✅ Minimal resource usage
 - ✅ Fast builds with native compilation
 - ✅ No containers overhead
 
 **Cons:**
+
 - ❌ Can't test Docker builds locally
 - ❌ Must rely on GitHub Actions for Docker testing
 
@@ -101,6 +104,7 @@ git push origin main
 ```
 
 GitHub Actions will:
+
 - Build Docker image
 - Run all tests
 - Publish to GitHub Container Registry (GHCR)
@@ -180,13 +184,13 @@ docker-compose up -d --build
 
 ### Prerequisites
 
-1. **DigitalOcean account** (get $200 credit: https://try.digitalocean.com/freetrialoffer/)
+1. **DigitalOcean account** (get $200 credit: <https://try.digitalocean.com/freetrialoffer/>)
 2. **GitHub repository** with code pushed
 3. **doctl CLI** (optional, for command-line deployment)
 
 ### Option A: Web Console (Easiest)
 
-1. Go to https://cloud.digitalocean.com/apps
+1. Go to <https://cloud.digitalocean.com/apps>
 2. Click **Create App**
 3. Select **GitHub** as source
 4. Authorize DigitalOcean to access your repository
@@ -272,6 +276,7 @@ doctl apps create-deployment <APP_ID>
 By default, data is ephemeral (lost on restart). For production:
 
 1. Edit `.do/app.yaml`:
+
    ```yaml
    services:
      - name: quartzdb-server
@@ -287,6 +292,7 @@ By default, data is ephemeral (lost on restart). For production:
    ```
 
 2. Redeploy:
+
    ```bash
    doctl apps update <APP_ID> --spec .do/app.yaml
    ```
@@ -380,6 +386,7 @@ docker run -d \
 | **Railway** | 512MB | $5 | Easy setup |
 
 **Pinecone comparison:**
+
 - Pinecone Starter: $70/month
 - QuartzDB on DO: $5-12/month
 - **Savings: $58-65/month (85-93% cheaper)**
@@ -401,6 +408,7 @@ docker run -d \
 ### Build Fails in GitHub Actions
 
 **Check:**
+
 1. View Actions tab: `https://github.com/YOUR_USERNAME/QuartzDB/actions`
 2. Look for error in build logs
 3. Common issues:
@@ -409,6 +417,7 @@ docker run -d \
    - Test failures
 
 **Fix:**
+
 ```bash
 # Test locally first (in Codespaces)
 cargo test
@@ -420,11 +429,13 @@ docker build -t quartzdb:test .
 ### DigitalOcean App Won't Start
 
 **Debug:**
+
 1. View logs: `doctl apps logs <APP_ID> --type run`
 2. Check build logs: `doctl apps logs <APP_ID> --type build`
 3. Verify health check: `curl https://your-app.ondigitalocean.app/api/v1/health`
 
 **Common issues:**
+
 - Port binding: Ensure `QUARTZ_HOST=0.0.0.0`
 - Health check path: Must be `/api/v1/health`
 - Build timeout: Increase timeout in app.yaml
@@ -445,6 +456,7 @@ echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_USERNAME --password-stdin
 ```
 
 **Make image public:**
+
 1. Go to package: `https://github.com/YOUR_USERNAME/QuartzDB/pkgs/container/quartzdb`
 2. Package settings → Change visibility → Public
 
@@ -459,6 +471,7 @@ curl https://your-app.ondigitalocean.app/api/v1/health
 ```
 
 **Expected response:**
+
 ```json
 {
   "status": "healthy",

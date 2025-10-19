@@ -18,11 +18,13 @@ QuartzDB provides a high-performance vector search API powered by the HNSW (Hier
 ## Named Indexes
 
 QuartzDB supports multiple named vector indexes, allowing you to:
+
 - Use different dimensions for different use cases (e.g., `products_384d`, `documents_768d`)
 - Apply different distance metrics per index (e.g., cosine for semantic, euclidean for images)
 - Isolate vector collections by purpose or tenant
 
 Each index has its own:
+
 - Storage directory: `./data/server/indexes/{name}/`
 - Vector ID sequence (starting from 1)
 - HNSW graph and metadata
@@ -38,6 +40,7 @@ curl http://localhost:3000/api/v1/indexes
 ```
 
 **Response:**
+
 ```json
 {
   "indexes": [
@@ -71,6 +74,7 @@ curl -X POST http://localhost:3000/api/v1/indexes/products_384d \
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Vector index 'products_384d' initialized successfully",
@@ -93,6 +97,7 @@ curl -X POST http://localhost:3000/api/v1/indexes/products_384d/vectors \
 ```
 
 **Response:**
+
 ```json
 {
   "id": 1,
@@ -114,6 +119,7 @@ curl -X POST http://localhost:3000/api/v1/indexes/{name}/vectors/search \
 ```
 
 **Response:**
+
 ```json
 {
   "results": [
@@ -208,6 +214,7 @@ Create and initialize a new named vector index with specified configuration.
 #### Error Responses
 
 - **400 Bad Request**: Invalid distance metric
+
   ```json
   {
     "error": "bad_request",
@@ -216,6 +223,7 @@ Create and initialize a new named vector index with specified configuration.
   ```
 
 - **400 Bad Request**: Index already exists with different configuration
+
   ```json
   {
     "error": "bad_request",
@@ -254,6 +262,7 @@ curl -X DELETE http://localhost:3000/api/v1/indexes/old_index
 #### Error Responses
 
 - **404 Not Found**: Index does not exist
+
   ```json
   {
     "error": "index_not_found",
@@ -303,6 +312,7 @@ Insert a new vector into the specified index.
 #### Error Responses
 
 - **503 Service Unavailable**: Index not initialized
+
   ```json
   {
     "error": "vector_index_not_initialized",
@@ -311,6 +321,7 @@ Insert a new vector into the specified index.
   ```
 
 - **400 Bad Request**: Dimension mismatch
+
   ```json
   {
     "error": "bad_request",
@@ -418,6 +429,7 @@ curl http://localhost:3000/api/v1/indexes/products_384d/vectors/42
 
 - **503 Service Unavailable**: Index not initialized
 - **404 Not Found**: Vector does not exist
+
   ```json
   {
     "error": "vector_not_found",
@@ -471,12 +483,14 @@ curl -X DELETE http://localhost:3000/api/v1/indexes/products_384d/vectors/42
 **Formula:** `similarity = (A · B) / (||A|| × ||B||)`
 
 **Use cases:**
+
 - Text embeddings (BERT, OpenAI, Cohere)
 - Sentence similarity
 - Document clustering
 - Recommendation systems (user/item embeddings)
 
 **Example:**
+
 ```json
 {
   "dimension": 384,
@@ -491,12 +505,14 @@ curl -X DELETE http://localhost:3000/api/v1/indexes/products_384d/vectors/42
 **Formula:** `distance = √(Σ(Ai - Bi)²)`
 
 **Use cases:**
+
 - Image similarity (CNN features)
 - Geographic coordinates
 - Time series data
 - Physical measurements
 
 **Example:**
+
 ```json
 {
   "dimension": 2048,
@@ -511,11 +527,13 @@ curl -X DELETE http://localhost:3000/api/v1/indexes/products_384d/vectors/42
 **Formula:** `score = Σ(Ai × Bi)`
 
 **Use cases:**
+
 - Already-normalized embeddings
 - Maximum inner product search (MIPS)
 - Fast approximate cosine similarity
 
 **Example:**
+
 ```json
 {
   "dimension": 768,
@@ -812,6 +830,7 @@ Use structured metadata for filtering (coming soon):
 ## Support
 
 For questions, issues, or feature requests:
+
 - GitHub Issues: [QuartzDB Repository](https://github.com/your-org/quartzdb)
 - Documentation: See `docs/HNSW_EXPLAINED.md` for algorithm details
 - Examples: See `quartz-server/examples/` for code samples

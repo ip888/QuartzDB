@@ -5,12 +5,14 @@
 QuartzDB is built on a distributed architecture with the following key components:
 
 ### Core Components
+
 - Query Engine: Processes and optimizes queries
 - Storage Engine: LSM-tree based storage with WAL
 - Consensus Module: Implements Raft for distributed consensus
 - Edge Manager: Handles edge node coordination
 
 ### Key Features
+
 - Distributed storage with automatic sharding
 - Edge-first architecture with local caching
 - Multi-region consistency guarantees
@@ -20,6 +22,7 @@ QuartzDB is built on a distributed architecture with the following key component
 ## Development Setup
 
 1. Install Dependencies:
+
 ```bash
 # Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -29,6 +32,7 @@ cargo install cargo-edit cargo-watch cargo-audit
 ```
 
 2. Setup Development Environment:
+
 ```bash
 # Clone the repository
 git clone https://github.com/ip888/QuartzDB.git
@@ -39,11 +43,13 @@ cd QuartzDB
 ```
 
 3. Build the Project:
+
 ```bash
 cargo build
 ```
 
 4. Run Tests:
+
 ```bash
 cargo test
 ```
@@ -67,6 +73,7 @@ This automatically runs when you push (via git hook) and validates:
 - ✅ **Security** - Scans for hardcoded secrets and vulnerabilities
 
 **Skip the hook** (not recommended):
+
 ```bash
 git push --no-verify
 ```

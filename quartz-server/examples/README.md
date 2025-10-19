@@ -22,6 +22,7 @@ The server will start on `http://localhost:3000` by default.
 A minimal example with no external dependencies (except `requests` which is usually pre-installed).
 
 **What it demonstrates:**
+
 - Initialize a 3D vector index
 - Insert sample vectors with metadata
 - Search for similar vectors
@@ -29,17 +30,20 @@ A minimal example with no external dependencies (except `requests` which is usua
 - Delete vectors
 
 **Requirements:**
+
 ```bash
 pip3 install requests
 ```
 
 **Run:**
+
 ```bash
 # Make sure the server is running first!
 python3 quartz-server/examples/simple_vector_demo.py
 ```
 
 **Expected output:**
+
 ```
 ================================================================================
 QuartzDB Vector Search Demo - Simple Example
@@ -74,11 +78,13 @@ QuartzDB Vector Search Demo - Simple Example
 A production-ready example using real text embeddings from Hugging Face sentence-transformers.
 
 **What it demonstrates:**
+
 - Generate embeddings from text using sentence-transformers
 - Semantic similarity search
 - Search for documents by meaning (not keywords)
 
 **Requirements:**
+
 ```bash
 pip3 install sentence-transformers requests
 ```
@@ -86,12 +92,14 @@ pip3 install sentence-transformers requests
 **⚠️ Note:** First run will download the model (~100MB), which may take a few minutes.
 
 **Run:**
+
 ```bash
 # Make sure the server is running first!
 python3 quartz-server/examples/semantic_search_demo.py
 ```
 
 **Expected output:**
+
 ```
 ================================================================================
 QuartzDB Vector Search Demo - Semantic Search
@@ -139,11 +147,13 @@ ModuleNotFoundError: No module named 'sentence_transformers'
 ```
 
 **Solution:** Install the required packages:
+
 ```bash
 pip3 install sentence_transformers requests
 ```
 
 Or use the simpler example that doesn't require sentence-transformers:
+
 ```bash
 python3 quartz-server/examples/simple_vector_demo.py
 ```
@@ -155,11 +165,14 @@ Error: Address already in use (os error 48)
 ```
 
 **Solution:** Either:
+
 1. Stop the other process using port 3000
 2. Or set a different port:
+
    ```bash
    QUARTZ_PORT=3001 cargo run -p quartz-server
    ```
+
    Then update `QUARTZ_URL` in the Python script to `http://localhost:3001`
 
 ### Index already initialized
@@ -169,6 +182,7 @@ Error: Vector index already exists
 ```
 
 **Solution:** Restart the server to clear the index, or delete the data directory:
+
 ```bash
 rm -rf ./data/quartz_server
 cargo run -p quartz-server

@@ -66,9 +66,11 @@ mod tests {
 
     #[test]
     fn test_search_result_ordering() {
-        let mut results = [SearchResult::new(1, 0.5),
+        let mut results = [
+            SearchResult::new(1, 0.5),
             SearchResult::new(2, 0.9),
-            SearchResult::new(3, 0.2)];
+            SearchResult::new(3, 0.2),
+        ];
 
         results.sort();
 

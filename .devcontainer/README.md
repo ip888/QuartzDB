@@ -95,12 +95,14 @@ docker-compose down
 ## 🔧 Codespace Configuration
 
 ### `.devcontainer/devcontainer.json`
+
 - Defines the development environment
 - Auto-installs VS Code extensions
 - Configures port forwarding
 - Sets up Docker-in-Docker
 
 ### `.devcontainer/Dockerfile`
+
 - Based on Microsoft's Rust devcontainer
 - Includes Python, Docker, and build tools
 - Pre-installs sentence-transformers
@@ -181,6 +183,7 @@ cargo test
    - Runs integration tests
    - Publishes to GitHub Container Registry
 3. Pull the image from GitHub Container Registry:
+
    ```bash
    docker pull ghcr.io/YOUR_USERNAME/quartzdb:latest
    ```
@@ -212,6 +215,7 @@ Once Docker images are in GitHub Container Registry:
    - Auto-deploy on push
 
 2. **DigitalOcean Droplet**:
+
    ```bash
    # SSH into droplet
    ssh root@your-droplet-ip
@@ -237,6 +241,7 @@ Once Docker images are in GitHub Container Registry:
 4. ✅ **Deploy pre-built images** from GitHub Container Registry
 
 **Benefits**:
+
 - No local Docker installation needed
 - No M1 compatibility issues
 - Saves local disk space (no 2GB+ Docker images)
@@ -246,21 +251,25 @@ Once Docker images are in GitHub Container Registry:
 ## 🆘 Troubleshooting
 
 ### Codespace won't start
+
 - Check GitHub billing/limits
 - Try creating a smaller machine (2-core)
 - Delete old Codespaces to free quota
 
 ### Port 3000 not accessible
+
 - Check PORTS tab shows "QuartzDB Server"
 - Try stopping/starting the server
 - Verify `QUARTZ_HOST=0.0.0.0` in environment
 
 ### Docker build fails in Codespace
+
 - Check disk space: `df -h`
 - Clear Docker cache: `docker system prune -a`
 - Restart Codespace
 
 ### Python demos fail
+
 - Verify server is running: `curl http://localhost:3000/api/v1/health`
 - Check sentence-transformers installed: `pip list | grep sentence`
 - Review server logs: `docker logs quartzdb`

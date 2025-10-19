@@ -101,7 +101,7 @@ QuartzDB is a high-performance distributed edge database designed for modern clo
 - Cargo
 - (Optional) Docker for containerized deployment
 
-#### Installation
+### Installation
 
 Add QuartzDB to your `Cargo.toml`:
 
@@ -361,49 +361,6 @@ Benchmark categories:
 - **WAL comparison**: WAL enabled vs disabled
 - **Concurrent operations**: Multi-threaded performance
 - **Mixed workload**: 70/30 read/write ratio
-
-## 🗺️ Roadmap
-
-### Phase 1: Core Storage ✅ (Completed)
-
-- [x] LSM tree implementation
-- [x] Write-ahead logging
-- [x] Cache management
-- [x] Background compaction
-- [x] Integration tests
-- [x] Performance benchmarks
-
-### Phase 2: API Server (Weeks 2-3)
-
-- [ ] HTTP REST API
-- [ ] gRPC interface
-- [ ] Authentication/Authorization
-- [ ] API documentation
-- [ ] Rate limiting
-
-### Phase 3: Vector Search (Week 4)
-
-- [ ] Vector storage format
-- [ ] HNSW index implementation
-- [ ] Similarity algorithms
-- [ ] Vector API endpoints
-- [ ] Integration with AI platforms
-
-### Phase 4: Edge Computing (Weeks 5-8)
-
-- [ ] Multi-region support
-- [ ] Data locality optimization
-- [ ] Smart replication
-- [ ] Conflict resolution
-- [ ] Edge node management
-
-### Phase 5: Production Ready (Weeks 9-12)
-
-- [ ] Monitoring & observability
-- [ ] Distributed tracing
-- [ ] Backup & recovery
-- [ ] Performance tuning
-- [ ] Load testing
 
 ## 🤝 Contributing
 

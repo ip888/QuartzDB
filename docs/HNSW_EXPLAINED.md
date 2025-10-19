@@ -111,6 +111,7 @@ pub struct HnswConfig {
 ### Parameter Guide
 
 #### M (max_connections)
+
 - **What**: Number of bi-directional links per node per layer
 - **Typical values**: 5-48 (default: 16)
 - **Trade-offs**:
@@ -118,6 +119,7 @@ pub struct HnswConfig {
   - Lower M → Faster insertions, less memory, lower recall
 
 #### ef_construction
+
 - **What**: Size of dynamic candidate list during index construction
 - **Typical values**: 100-500 (default: 200)
 - **Trade-offs**:
@@ -125,6 +127,7 @@ pub struct HnswConfig {
   - Lower ef_construction → Faster build, lower quality
 
 #### ef_search
+
 - **What**: Size of dynamic candidate list during search
 - **Typical values**: 100-500 (default: 100)
 - **Trade-offs**:
@@ -241,6 +244,7 @@ if nearest[0].score < 0.5 {
 | **Brute Force** | Linear scan | ★☆☆☆☆ | ★★★★★ | ★★★★★ | Small datasets (<1K) |
 
 **Why HNSW is preferred:**
+
 - Best speed/accuracy trade-off
 - Scales to billions of vectors
 - Supports dynamic updates (insert/delete)
@@ -255,6 +259,7 @@ if nearest[0].score < 0.5 {
 HNSW works with any distance metric. QuartzDB supports:
 
 #### 1. Cosine Similarity
+
 ```
 cosine_similarity(u, v) = (u · v) / (||u|| × ||v||)
 Range: [-1, 1], where 1 = identical direction
@@ -262,6 +267,7 @@ Best for: Text embeddings (normalized vectors)
 ```
 
 #### 2. Euclidean Distance
+
 ```
 euclidean_distance(u, v) = √(Σ(ui - vi)²)
 Range: [0, ∞], where 0 = identical
@@ -269,6 +275,7 @@ Best for: Image embeddings, magnitude matters
 ```
 
 #### 3. Dot Product
+
 ```
 dot_product(u, v) = Σ(ui × vi)
 Range: (-∞, ∞), higher = more similar
@@ -360,6 +367,7 @@ let index: HnswIndex = deserialize(&data)?;
 ### When to Use HNSW
 
 ✅ **Good fit:**
+
 - Need sub-millisecond search
 - Can tolerate 95-99% recall
 - Dataset size: 1K - 1B vectors
@@ -367,6 +375,7 @@ let index: HnswIndex = deserialize(&data)?;
 - Multiple queries per second
 
 ❌ **Not ideal:**
+
 - Need 100% exact results (use brute force)
 - Very small datasets (<1K vectors)
 - Infrequent queries (build overhead not worth it)
@@ -375,16 +384,19 @@ let index: HnswIndex = deserialize(&data)?;
 ### Tuning for Your Use Case
 
 **Interactive applications** (low latency):
+
 - Use `HnswConfig::fast()`
 - Lower M, lower ef_search
 - Sacrifice some accuracy for speed
 
 **Offline processing** (high accuracy):
+
 - Use `HnswConfig::high_quality()`
 - Higher M, higher ef_construction
 - Build once, query many times
 
 **Balanced** (most use cases):
+
 - Use `HnswConfig::balanced()`
 - Default parameters work well
 
