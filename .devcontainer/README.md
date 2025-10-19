@@ -22,11 +22,13 @@ This repository is configured for **GitHub Codespaces**, providing a fully-funct
 
 The Codespace comes pre-configured with:
 
-- ✅ **Rust 1.89+** (latest stable)
+- ✅ **Rust 1.90+** (latest stable) with rustfmt, clippy
+- ✅ **Python 3.13** (latest) with pip, venv, common packages
+- ✅ **Node.js 22 LTS** (Iron) with npm, yarn
 - ✅ **Docker-in-Docker** (build and run containers)
-- ✅ **Python 3.11+** with sentence-transformers
 - ✅ **GitHub CLI** (`gh` command)
-- ✅ **VS Code extensions**: rust-analyzer, Docker, Python
+- ✅ **clang/LLVM** (for Rust bindgen support)
+- ✅ **VS Code extensions**: rust-analyzer, LLDB debugger, Python, ESLint, Prettier, Docker
 - ✅ **Port forwarding** for QuartzDB (port 3000)
 
 ## 🛠️ Development Workflow
