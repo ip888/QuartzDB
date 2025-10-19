@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = [
+    "quartz-core",
+    "quartz-storage",
+    "quartz-network",
+    "quartz-edge",
+    "quartz-client",
+    "quartz-server",
+    "quartz-vector",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89.0"
+authors = ["Igor Petrov <ihorpetroff@gmail.com>"]
+description = "QuartzDB - High-performance distributed edge database"
+license = "MIT"
+
+[workspace.dependencies]
+tokio = { version = "1.48.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+async-trait = "0.1"

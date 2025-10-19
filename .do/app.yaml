@@ -1,0 +1,60 @@
+name: quartzdb
+region: nyc
+
+services:
+  - name: quartzdb-server
+    
+    # Build from GitHub repository
+    github:
+      repo: YOUR_USERNAME/QuartzDB
+      branch: main
+      deploy_on_push: true
+    
+    # Use the Dockerfile in the repository
+    dockerfile_path: Dockerfile
+    
+    # Instance configuration
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    
+    # Health check
+    health_check:
+      http_path: /api/v1/health
+      initial_delay_seconds: 30
+      period_seconds: 30
+      timeout_seconds: 10
+      success_threshold: 1
+      failure_threshold: 3
+    
+    # Environment variables
+    envs:
+      - key: RUST_LOG
+        value: info
+      - key: QUARTZ_HOST
+        value: 0.0.0.0
+      - key: QUARTZ_PORT
+        value: 3000
+      - key: QUARTZ_DATA_PATH
+        value: /data
+    
+    # HTTP routes
+    http_port: 3000
+    routes:
+      - path: /
+    
+    # Persistent storage (optional, for data persistence)
+    # volumes:
+    #   - name: quartzdb-data
+    #     mount_path: /data
+    #     size_gb: 1
+
+# Persistent volumes (uncomment if you need data persistence)
+# volumes:
+#   - name: quartzdb-data
+#     region: nyc
+#     size_gb: 1
+
+# Alerts (optional)
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED

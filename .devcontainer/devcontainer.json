@@ -1,0 +1,66 @@
+{
+  "name": "QuartzDB Development",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  
+  // Configure tool-specific properties
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "rust-analyzer.checkOnSave.command": "clippy",
+        "rust-analyzer.cargo.features": "all",
+        "editor.formatOnSave": true,
+        "files.watcherExclude": {
+          "**/target/**": true
+        }
+      },
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb",
+        "tamasfe.even-better-toml",
+        "serayuzgur.crates",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
+
+  // Forward ports for QuartzDB server
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "QuartzDB Server",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // Use 'postCreateCommand' to run commands after the container is created
+  "postCreateCommand": "rustc --version && cargo --version && python3 --version",
+
+  // Comment out to connect as root instead
+  "remoteUser": "vscode",
+
+  // Features to add to the dev container
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "dockerDashComposeVersion": "v2"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+
+  // Environment variables
+  "containerEnv": {
+    "RUST_LOG": "info",
+    "CARGO_TARGET_DIR": "/tmp/target"
+  },
+
+  // Mount the workspace to preserve cargo cache
+  "mounts": [
+    "source=${localWorkspaceFolder}/target,target=${containerWorkspaceFolder}/target,type=bind,consistency=cached"
+  ]
+}

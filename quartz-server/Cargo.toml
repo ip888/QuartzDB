@@ -1,0 +1,43 @@
+[package]
+name = "quartz-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "HTTP API server for QuartzDB"
+license.workspace = true
+
+[[bin]]
+name = "quartz-server"
+path = "src/main.rs"
+
+[dependencies]
+quartz-core = { path = "../quartz-core" }
+quartz-storage = { path = "../quartz-storage" }
+quartz-vector = { path = "../quartz-vector" }
+
+# Async runtime
+tokio.workspace = true
+
+# Web framework
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip"] }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# HTTP
+hyper = "1.0"
+
+[dev-dependencies]
+tempfile = "3.8"
+reqwest = { version = "0.12", features = ["json"] }
