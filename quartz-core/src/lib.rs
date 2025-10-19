@@ -1,15 +1,15 @@
 //! QuartzDB Core Module
-//! 
+//!
 //! This module contains the core components of QuartzDB, including:
 //! - Query processing
 //! - Transaction management
 //! - Distributed consensus
 //! - Edge computing coordination
 
+pub mod consensus;
 pub mod error;
 pub mod query;
 pub mod transaction;
-pub mod consensus;
 pub mod types;
 
 pub use error::Error;

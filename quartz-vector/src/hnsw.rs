@@ -11,8 +11,8 @@
 
 use crate::{DistanceMetric, Result, SearchResult, VectorError, VectorId};
 use serde::{Deserialize, Serialize};
-use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 /// Configuration for HNSW index
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,7 +204,8 @@ impl HnswIndex {
                             let _ = neighbor;
 
                             // Select neighbors to keep
-                            let to_keep_ids = self.select_neighbors(&connections, m, &neighbor_vec)?;
+                            let to_keep_ids =
+                                self.select_neighbors(&connections, m, &neighbor_vec)?;
 
                             // Re-borrow and update
                             if let Some(neighbor) = self.nodes.get_mut(&neighbor_id) {
@@ -264,10 +265,7 @@ impl HnswIndex {
 
     /// Delete a vector from the index
     pub fn delete(&mut self, id: VectorId) -> Result<()> {
-        let node = self
-            .nodes
-            .remove(&id)
-            .ok_or(VectorError::NotFound(id))?;
+        let node = self.nodes.remove(&id).ok_or(VectorError::NotFound(id))?;
 
         // Remove all connections to this node
         for layer in 0..=node.level {
@@ -284,12 +282,7 @@ impl HnswIndex {
         // Update entry point if necessary
         if self.entry_point == Some(id) {
             self.entry_point = self.nodes.keys().next().copied();
-            self.max_layer = self
-                .nodes
-                .values()
-                .map(|n| n.level)
-                .max()
-                .unwrap_or(0);
+            self.max_layer = self.nodes.values().map(|n| n.level).max().unwrap_or(0);
         }
 
         Ok(())
@@ -318,32 +311,32 @@ impl HnswIndex {
 
         while let Some(Reverse((OrderedFloat(current_dist), current_id))) = candidates.pop() {
             // If current is farther than the farthest in nearest, stop
-            if let Some(&(OrderedFloat(farthest_dist), _)) = nearest.peek() {
-                if current_dist > farthest_dist {
-                    break;
-                }
+            if let Some(&(OrderedFloat(farthest_dist), _)) = nearest.peek()
+                && current_dist > farthest_dist
+            {
+                break;
             }
 
             // Check all neighbors
-            if let Some(node) = self.nodes.get(&current_id) {
-                if layer < node.connections.len() {
-                    for &neighbor_id in &node.connections[layer] {
-                        if visited.insert(neighbor_id) {
-                            let dist = self.distance(query, neighbor_id)?;
+            if let Some(node) = self.nodes.get(&current_id)
+                && layer < node.connections.len()
+            {
+                for &neighbor_id in &node.connections[layer] {
+                    if visited.insert(neighbor_id) {
+                        let dist = self.distance(query, neighbor_id)?;
 
-                            if nearest.len() < num_to_return
-                                || dist
-                                    < nearest
-                                        .peek()
-                                        .map(|(OrderedFloat(d), _)| *d)
-                                        .unwrap_or(f32::MAX)
-                            {
-                                candidates.push(Reverse((OrderedFloat(dist), neighbor_id)));
-                                nearest.push((OrderedFloat(dist), neighbor_id));
+                        if nearest.len() < num_to_return
+                            || dist
+                                < nearest
+                                    .peek()
+                                    .map(|(OrderedFloat(d), _)| *d)
+                                    .unwrap_or(f32::MAX)
+                        {
+                            candidates.push(Reverse((OrderedFloat(dist), neighbor_id)));
+                            nearest.push((OrderedFloat(dist), neighbor_id));
 
-                                if nearest.len() > num_to_return {
-                                    nearest.pop();
-                                }
+                            if nearest.len() > num_to_return {
+                                nearest.pop();
                             }
                         }
                     }
@@ -383,21 +376,18 @@ impl HnswIndex {
 
     /// Calculate distance between query and a stored vector
     fn distance(&self, query: &[f32], id: VectorId) -> Result<f32> {
-        let vector = self
-            .vectors
-            .get(&id)
-            .ok_or(VectorError::NotFound(id))?;
-        
+        let vector = self.vectors.get(&id).ok_or(VectorError::NotFound(id))?;
+
         let score = self.metric.calculate(query, vector);
-        
+
         // For similarity metrics (higher is better), convert to distance (lower is better)
         // For distance metrics (lower is better), use as-is
         let distance = if self.metric.higher_is_better() {
-            1.0 - score  // Convert similarity to distance
+            1.0 - score // Convert similarity to distance
         } else {
-            score  // Already a distance
+            score // Already a distance
         };
-        
+
         Ok(distance)
     }
 
@@ -423,7 +413,9 @@ impl PartialOrd for OrderedFloat {
 
 impl Ord for OrderedFloat {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.partial_cmp(&other.0).unwrap_or(std::cmp::Ordering::Equal)
+        self.0
+            .partial_cmp(&other.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
@@ -462,9 +454,12 @@ mod tests {
         // Should find at least some results
         assert!(!results.is_empty(), "Search returned no results");
         println!("Search results: {:?}", results);
-        
+
         // Should find vector 1 in top 3 results
-        assert!(results.iter().any(|r| r.id == 1), "Didn't find vector 1 in results");
+        assert!(
+            results.iter().any(|r| r.id == 1),
+            "Didn't find vector 1 in results"
+        );
     }
 
     #[test]

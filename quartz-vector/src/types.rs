@@ -53,7 +53,10 @@ impl Ord for SearchResult {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Sort by score (descending for similarity, ascending for distance)
         // We use reverse ordering to get highest scores first
-        other.score.partial_cmp(&self.score).unwrap_or(std::cmp::Ordering::Equal)
+        other
+            .score
+            .partial_cmp(&self.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
@@ -63,11 +66,9 @@ mod tests {
 
     #[test]
     fn test_search_result_ordering() {
-        let mut results = vec![
-            SearchResult::new(1, 0.5),
+        let mut results = [SearchResult::new(1, 0.5),
             SearchResult::new(2, 0.9),
-            SearchResult::new(3, 0.2),
-        ];
+            SearchResult::new(3, 0.2)];
 
         results.sort();
 

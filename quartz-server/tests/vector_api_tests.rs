@@ -2,7 +2,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use quartz_server::{create_router, AppState};
+use quartz_server::{AppState, create_router};
 use quartz_storage::{StorageConfig, StorageEngine};
 use serde_json::json;
 use std::sync::Arc;
@@ -90,7 +90,7 @@ async fn test_initialize_vector_index() {
 
 #[tokio::test]
 async fn test_insert_and_retrieve_vector() {
-    let (mut app, _temp) = create_test_app().await;
+    let (app, _temp) = create_test_app().await;
 
     // Initialize index
     let init_request = Request::builder()
@@ -110,7 +110,7 @@ async fn test_insert_and_retrieve_vector() {
     assert_eq!(status, StatusCode::OK);
 
     // Need to recreate app for next request
-    let (mut app, _temp) = create_test_app().await;
+    let (app, _temp) = create_test_app().await;
 
     // Re-initialize
     let init_request = Request::builder()
@@ -167,7 +167,7 @@ async fn test_insert_and_retrieve_vector() {
 
 #[tokio::test]
 async fn test_search_vectors() {
-    let (mut app, _temp) = create_test_app().await;
+    let (app, _temp) = create_test_app().await;
 
     // Initialize index
     let init_request = Request::builder()
@@ -220,12 +220,12 @@ async fn test_search_vectors() {
     let results = body["results"].as_array().unwrap();
     assert!(results.len() <= 2);
     // The search should find vectors similar to [0.9, 0.1, 0.0]
-    assert!(results.len() > 0);
+    assert!(!results.is_empty());
 }
 
 #[tokio::test]
 async fn test_delete_vector() {
-    let (mut app, _temp) = create_test_app().await;
+    let (app, _temp) = create_test_app().await;
 
     // Initialize index
     let init_request = Request::builder()
@@ -304,5 +304,10 @@ async fn test_invalid_distance_metric() {
     let (status, body): (_, serde_json::Value) = make_request(app, request).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body["message"].as_str().unwrap().contains("Invalid distance metric"));
+    assert!(
+        body["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid distance metric")
+    );
 }

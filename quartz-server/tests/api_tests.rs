@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use quartz_server::{create_router, AppState};
+use quartz_server::{AppState, create_router};
 use quartz_storage::{StorageConfig, StorageEngine};
 use serde_json::json;
 use std::sync::Arc;
@@ -11,17 +11,13 @@ use tower::ServiceExt;
 async fn create_test_app() -> (axum::Router, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let path = temp_dir.path().to_str().unwrap();
-    let storage = StorageEngine::with_config(
-        path,
-        StorageConfig::default(),
-    )
-    .unwrap();
+    let storage = StorageEngine::with_config(path, StorageConfig::default()).unwrap();
 
     let state = AppState {
         storage: Arc::new(storage),
         storage_path: Arc::new(path.to_string()),
-        vector_index: Arc::new(tokio::sync::RwLock::new(None)),
-        next_vector_id: Arc::new(tokio::sync::RwLock::new(1)),
+        vector_indexes: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+        next_vector_ids: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
     };
 
     let app = create_router(state);
@@ -132,7 +128,7 @@ async fn test_put_empty_key() {
         .unwrap();
 
     let response = app.oneshot(request).await.unwrap();
-    
+
     // Should return 404 (not found) because empty path doesn't match route
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
@@ -330,7 +326,7 @@ async fn test_concurrent_requests() {
 
     // Verify all keys were stored (create new app instance)
     let (_app2, _) = create_test_app().await;
-    
+
     // Note: This test won't verify persistence since we're using a fresh temp dir
     // In a real scenario, we'd use the same storage path
     // For now, let's just verify the test structure works
@@ -368,7 +364,7 @@ async fn test_large_value() {
 async fn test_unicode_values() {
     let (app, _temp) = create_test_app().await;
 
-    let unicode_values = vec![
+    let unicode_values = [
         "Hello, 世界",
         "Привет мир",
         "مرحبا بالعالم",

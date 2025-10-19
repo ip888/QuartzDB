@@ -1,22 +1,21 @@
 /// Simple QuartzDB HTTP API client example
-/// 
+///
 /// This example demonstrates:
 /// - Starting a client connection
 /// - Storing key-value pairs
 /// - Retrieving values
 /// - Deleting keys
 /// - Error handling
-/// 
+///
 /// Run the server first:
 /// ```bash
 /// cargo run -p quartz-server
 /// ```
-/// 
+///
 /// Then run this example:
 /// ```bash
 /// cargo run -p quartz-server --example simple_client
 /// ```
-
 use serde::{Deserialize, Serialize};
 
 const BASE_URL: &str = "http://localhost:3000/api/v1";
@@ -79,7 +78,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .json()
         .await?;
-    println!("   ✅ Server is {} (version {})\n", health.status, health.version);
+    println!(
+        "   ✅ Server is {} (version {})\n",
+        health.status, health.version
+    );
 
     // 2. Get stats
     println!("2️⃣  Getting storage statistics...");
@@ -95,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Store some values
     println!("3️⃣  Storing key-value pairs...");
-    
+
     let keys = vec![
         ("user:alice", "Alice Johnson"),
         ("user:bob", "Bob Smith"),

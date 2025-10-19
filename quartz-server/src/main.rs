@@ -2,13 +2,13 @@
 //!
 //! A high-performance REST API server for QuartzDB.
 
-use quartz_server::{create_router, AppState};
+use quartz_server::{AppState, create_router};
 use quartz_storage::{StorageConfig, StorageEngine};
 use std::sync::Arc;
 use tower_http::{
+    compression::CompressionLayer,
     cors::CorsLayer,
     trace::{DefaultMakeSpan, TraceLayer},
-    compression::CompressionLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -26,8 +26,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("🚀 Starting QuartzDB HTTP API Server");
 
     // Configure storage
-    let storage_path = std::env::var("QUARTZ_DATA_PATH")
-        .unwrap_or_else(|_| "./data/quartz_server".to_string());
+    let storage_path =
+        std::env::var("QUARTZ_DATA_PATH").unwrap_or_else(|_| "./data/quartz_server".to_string());
 
     let config = StorageConfig {
         cache_size: std::env::var("QUARTZ_CACHE_SIZE")
@@ -100,8 +100,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("🎯 Ready to accept requests!");
 
     // Run server
-    axum::serve(listener, app)
-        .await?;
+    axum::serve(listener, app).await?;
 
     // Cleanup on shutdown
     storage.stop_compaction().await;

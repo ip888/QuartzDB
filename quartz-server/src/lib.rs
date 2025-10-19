@@ -3,20 +3,19 @@
 //! This module provides a REST API for QuartzDB storage operations.
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{delete, get, post},
-    Json, Router,
+};
+use quartz_storage::{StorageEngine, StorageStats};
+use quartz_vector::{
+    DistanceMetric, HnswConfig, PersistentVectorIndex, Vector, VectorId, VectorIndexConfig,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use quartz_storage::{StorageEngine, StorageStats};
-use quartz_vector::{
-    PersistentVectorIndex, Vector, VectorId,
-    DistanceMetric, HnswConfig, VectorIndexConfig,
-};
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -39,22 +38,22 @@ pub struct ErrorResponse {
 pub enum ApiError {
     #[error("Storage error: {0}")]
     Storage(#[from] quartz_storage::Error),
-    
+
     #[error("Vector error: {0}")]
     Vector(#[from] quartz_vector::VectorError),
-    
+
     #[error("Key not found: {0}")]
     NotFound(String),
-    
+
     #[error("Vector not found: {0}")]
     VectorNotFound(u64),
-    
+
     #[error("Index not found: {0}")]
     IndexNotFound(String),
-    
+
     #[error("Invalid request: {0}")]
     BadRequest(String),
-    
+
     #[error("Vector index not initialized")]
     VectorIndexNotInitialized,
 }
@@ -87,11 +86,7 @@ impl IntoResponse for ApiError {
                 "index_not_found",
                 format!("Index '{}' not found", name),
             ),
-            ApiError::BadRequest(msg) => (
-                StatusCode::BAD_REQUEST,
-                "bad_request",
-                msg,
-            ),
+            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "bad_request", msg),
             ApiError::VectorIndexNotInitialized => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "vector_index_not_initialized",
@@ -166,7 +161,7 @@ pub async fn get_handler(
     Path(key): Path<String>,
 ) -> Result<Json<GetResponse>, ApiError> {
     let value = state.storage.get(key.as_bytes()).await?;
-    
+
     match value {
         Some(v) => {
             let value_str = String::from_utf8_lossy(&v).to_string();
@@ -189,8 +184,11 @@ pub async fn put_handler(
         return Err(ApiError::BadRequest("Key cannot be empty".to_string()));
     }
 
-    state.storage.put(key.as_bytes(), payload.value.as_bytes()).await?;
-    
+    state
+        .storage
+        .put(key.as_bytes(), payload.value.as_bytes())
+        .await?;
+
     Ok(Json(PutResponse {
         key,
         message: "Value stored successfully".to_string(),
@@ -204,13 +202,13 @@ pub async fn delete_handler(
 ) -> Result<Json<DeleteResponse>, ApiError> {
     // Check if key exists first
     let exists = state.storage.get(key.as_bytes()).await?.is_some();
-    
+
     if !exists {
         return Err(ApiError::NotFound(key));
     }
 
     state.storage.delete(key.as_bytes()).await?;
-    
+
     Ok(Json(DeleteResponse {
         key,
         message: "Key deleted successfully".to_string(),
@@ -226,9 +224,7 @@ pub async fn health_handler() -> Json<HealthResponse> {
 }
 
 /// GET /api/v1/stats - Get storage statistics
-pub async fn stats_handler(
-    State(state): State<AppState>,
-) -> Json<StatsResponse> {
+pub async fn stats_handler(State(state): State<AppState>) -> Json<StatsResponse> {
     let stats = state.storage.stats().await;
     Json(stats.into())
 }
@@ -333,10 +329,12 @@ pub async fn init_vector_index_handler(
         "cosine" => DistanceMetric::Cosine,
         "euclidean" => DistanceMetric::Euclidean,
         "dotproduct" | "dot_product" => DistanceMetric::DotProduct,
-        _ => return Err(ApiError::BadRequest(format!(
-            "Invalid distance metric: {}. Must be one of: cosine, euclidean, dotproduct",
-            req.metric
-        ))),
+        _ => {
+            return Err(ApiError::BadRequest(format!(
+                "Invalid distance metric: {}. Must be one of: cosine, euclidean, dotproduct",
+                req.metric
+            )));
+        }
     };
 
     // Create HNSW config - use presets or defaults
@@ -357,33 +355,45 @@ pub async fn init_vector_index_handler(
 
     // Create persistent vector index with storage path
     let vector_path = format!("{}/indexes/{}", state.storage_path.as_str(), name);
-    
+
     // Try to open existing index first, create new one if it doesn't exist
     let index = match PersistentVectorIndex::open(&vector_path).await {
         Ok(existing_index) => {
             // Verify the existing index has the same configuration
             let existing_dim = existing_index.dimension();
             let existing_metric = existing_index.metric();
-            
+
             if existing_dim != req.dimension {
                 return Err(ApiError::BadRequest(format!(
                     "Index '{}' already exists with dimension {} (requested: {}). Please delete the existing index or use the existing configuration.",
                     name, existing_dim, req.dimension
                 )));
             }
-            
+
             if existing_metric != metric {
                 return Err(ApiError::BadRequest(format!(
                     "Index '{}' already exists with metric {:?} (requested: {:?}). Please delete the existing index or use the existing configuration.",
                     name, existing_metric, metric
                 )));
             }
-            
-            tracing::info!("Opened existing vector index '{}' at {} ({}D, {:?})", name, vector_path, existing_dim, existing_metric);
+
+            tracing::info!(
+                "Opened existing vector index '{}' at {} ({}D, {:?})",
+                name,
+                vector_path,
+                existing_dim,
+                existing_metric
+            );
             existing_index
         }
         Err(_) => {
-            tracing::info!("Creating new vector index '{}' at {} ({}D, {:?})", name, vector_path, req.dimension, metric);
+            tracing::info!(
+                "Creating new vector index '{}' at {} ({}D, {:?})",
+                name,
+                vector_path,
+                req.dimension,
+                metric
+            );
             PersistentVectorIndex::create(&vector_path, config).await?
         }
     };
@@ -391,7 +401,7 @@ pub async fn init_vector_index_handler(
     // Store in state
     let mut vector_indexes = state.vector_indexes.write().await;
     vector_indexes.insert(name.clone(), index);
-    
+
     // Initialize vector ID counter for this index
     let mut next_ids = state.next_vector_ids.write().await;
     next_ids.entry(name.clone()).or_insert(1);
@@ -410,7 +420,8 @@ pub async fn insert_vector_handler(
     Json(req): Json<InsertVectorRequest>,
 ) -> Result<Json<InsertVectorResponse>, ApiError> {
     let mut vector_indexes = state.vector_indexes.write().await;
-    let index = vector_indexes.get_mut(&name)
+    let index = vector_indexes
+        .get_mut(&name)
         .ok_or_else(|| ApiError::IndexNotFound(name.clone()))?;
 
     // Generate new ID
@@ -422,7 +433,9 @@ pub async fn insert_vector_handler(
     let vector = Vector::new(req.vector);
 
     if let Some(metadata) = req.metadata {
-        index.insert_with_metadata(current_id, vector, Some(metadata)).await?;
+        index
+            .insert_with_metadata(current_id, vector, Some(metadata))
+            .await?;
     } else {
         index.insert(current_id, vector).await?;
     }
@@ -440,7 +453,8 @@ pub async fn search_vectors_handler(
     Json(req): Json<SearchVectorsRequest>,
 ) -> Result<Json<SearchVectorsResponse>, ApiError> {
     let vector_indexes = state.vector_indexes.read().await;
-    let index = vector_indexes.get(&name)
+    let index = vector_indexes
+        .get(&name)
         .ok_or_else(|| ApiError::IndexNotFound(name.clone()))?;
 
     let query_vector = Vector::new(req.vector);
@@ -470,12 +484,12 @@ pub async fn get_vector_handler(
     Path((name, id)): Path<(String, VectorId)>,
 ) -> Result<Json<GetVectorResponse>, ApiError> {
     let vector_indexes = state.vector_indexes.read().await;
-    let index = vector_indexes.get(&name)
+    let index = vector_indexes
+        .get(&name)
         .ok_or_else(|| ApiError::IndexNotFound(name.clone()))?;
 
-    let vector = index.get(id)
-        .ok_or(ApiError::VectorNotFound(id))?;
-    
+    let vector = index.get(id).ok_or(ApiError::VectorNotFound(id))?;
+
     // Extract metadata from SearchResult if we need it separately
     // For now, metadata is None since get() doesn't return it
     let metadata = None;
@@ -493,7 +507,8 @@ pub async fn delete_vector_handler(
     Path((name, id)): Path<(String, VectorId)>,
 ) -> Result<Json<DeleteVectorResponse>, ApiError> {
     let mut vector_indexes = state.vector_indexes.write().await;
-    let index = vector_indexes.get_mut(&name)
+    let index = vector_indexes
+        .get_mut(&name)
         .ok_or_else(|| ApiError::IndexNotFound(name.clone()))?;
 
     index.delete(id).await?;
@@ -520,11 +535,9 @@ pub struct ListIndexesResponse {
 }
 
 /// GET /api/v1/indexes - List all vector indexes
-pub async fn list_indexes_handler(
-    State(state): State<AppState>,
-) -> Json<ListIndexesResponse> {
+pub async fn list_indexes_handler(State(state): State<AppState>) -> Json<ListIndexesResponse> {
     let vector_indexes = state.vector_indexes.read().await;
-    
+
     let mut indexes = Vec::new();
     for (name, index) in vector_indexes.iter() {
         indexes.push(IndexInfo {
@@ -534,7 +547,7 @@ pub async fn list_indexes_handler(
             num_vectors: index.len(),
         });
     }
-    
+
     Json(ListIndexesResponse { indexes })
 }
 
@@ -552,18 +565,19 @@ pub async fn delete_index_handler(
 ) -> Result<Json<DeleteIndexResponse>, ApiError> {
     let mut vector_indexes = state.vector_indexes.write().await;
     let mut next_ids = state.next_vector_ids.write().await;
-    
+
     // Remove from state
-    vector_indexes.remove(&name)
+    vector_indexes
+        .remove(&name)
         .ok_or_else(|| ApiError::IndexNotFound(name.clone()))?;
     next_ids.remove(&name);
-    
+
     // Delete from filesystem
     let index_path = format!("{}/indexes/{}", state.storage_path.as_str(), name);
     if let Err(e) = std::fs::remove_dir_all(&index_path) {
         tracing::warn!("Failed to delete index directory {}: {}", index_path, e);
     }
-    
+
     Ok(Json(DeleteIndexResponse {
         name: name.clone(),
         message: format!("Index '{}' deleted successfully", name),
@@ -584,10 +598,22 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/indexes", get(list_indexes_handler))
         .route("/api/v1/indexes/{name}", post(init_vector_index_handler))
         .route("/api/v1/indexes/{name}", delete(delete_index_handler))
-        .route("/api/v1/indexes/{name}/vectors", post(insert_vector_handler))
-        .route("/api/v1/indexes/{name}/vectors/search", post(search_vectors_handler))
-        .route("/api/v1/indexes/{name}/vectors/{id}", get(get_vector_handler))
-        .route("/api/v1/indexes/{name}/vectors/{id}", delete(delete_vector_handler))
+        .route(
+            "/api/v1/indexes/{name}/vectors",
+            post(insert_vector_handler),
+        )
+        .route(
+            "/api/v1/indexes/{name}/vectors/search",
+            post(search_vectors_handler),
+        )
+        .route(
+            "/api/v1/indexes/{name}/vectors/{id}",
+            get(get_vector_handler),
+        )
+        .route(
+            "/api/v1/indexes/{name}/vectors/{id}",
+            delete(delete_vector_handler),
+        )
         .with_state(state)
 }
 
@@ -600,11 +626,7 @@ mod tests {
     async fn create_test_app() -> (Router, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().to_str().unwrap();
-        let storage = StorageEngine::with_config(
-            path,
-            StorageConfig::default(),
-        )
-        .unwrap();
+        let storage = StorageEngine::with_config(path, StorageConfig::default()).unwrap();
 
         let state = AppState {
             storage: Arc::new(storage),

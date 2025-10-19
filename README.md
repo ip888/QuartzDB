@@ -43,12 +43,12 @@ QuartzDB is a high-performance distributed edge database designed for modern clo
 
 ### Coming Soon 🚀
 
-- **Vector Search Module** (Week 4)
+- **Vector Search Module**
   - HNSW indexing for AI embeddings
   - Similarity search (cosine, euclidean, dot product)
   - Integration with OpenAI, Cohere, Hugging Face
   
-- **gRPC API Server** (Week 3)
+- **gRPC API Server**
   - High-performance gRPC interface
   - Authentication & authorization
   - Streaming support
@@ -60,26 +60,26 @@ QuartzDB is a high-performance distributed edge database designed for modern clo
 
 ## 🏗️ Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
-│                     Client Application                   │
+│                     Client Application                  │
 └─────────────────┬───────────────────────────────────────┘
                   │
                   ↓
 ┌─────────────────────────────────────────────────────────┐
-│                    QuartzDB Client SDK                   │
+│                    QuartzDB Client SDK                  │
 │  • Connection Pooling  • Retry Logic  • Metrics         │
 └─────────────────┬───────────────────────────────────────┘
                   │
                   ↓
 ┌─────────────────────────────────────────────────────────┐
-│                   Storage Engine (Core)                  │
-│  ┌──────────┐  ┌───────────┐  ┌──────────┐             │
-│  │  Cache   │  │  LSM Tree │  │   WAL    │             │
-│  │ Manager  │  │ (Levels)  │  │  (Log)   │             │
-│  └──────────┘  └───────────┘  └──────────┘             │
-│                        │                                 │
-│                        ↓                                 │
+│                   Storage Engine (Core)                 │
+│  ┌──────────┐  ┌───────────┐  ┌──────────┐              │ 
+│  │  Cache   │  │  LSM Tree │  │   WAL    │              │
+│  │ Manager  │  │ (Levels)  │  │  (Log)   │              │
+│  └──────────┘  └───────────┘  └──────────┘              │
+│                        │                                │
+│                        ↓                                │
 │                  ┌─────────────┐                        │
 │                  │  RocksDB    │                        │
 │                  │  (Backend)  │                        │
@@ -96,23 +96,6 @@ QuartzDB is a high-performance distributed edge database designed for modern clo
 5. **RocksDB**: Proven storage backend
 
 ## 🚀 Quick Start
-
-### Option 1: GitHub Codespaces (Recommended for M1 Mac)
-
-**No local installation needed!** Develop in the cloud with full Docker support:
-
-1. Click the green **Code** button on GitHub
-2. Select **Codespaces** → **Create codespace on main**
-3. Wait 2-3 minutes for setup
-4. Start coding immediately!
-
-**Free tier**: 60 hours/month on 2-core machine
-
-[📖 Detailed Codespaces Guide](.devcontainer/README.md)
-
-### Option 2: Local Development
-
-#### Prerequisites
 
 - Rust 1.75 or higher
 - Cargo
@@ -426,13 +409,44 @@ Benchmark categories:
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details on our development process.
 
-## 📄 License
+## �️ Development
+
+### Setup Development Environment
+
+```bash
+# Clone and setup
+git clone https://github.com/ip888/QuartzDB.git
+cd QuartzDB
+./scripts/setup-dev.sh  # Install git hooks and check dependencies
+```
+
+### Pre-Push Validation
+
+Before pushing code, run comprehensive checks:
+
+```bash
+./scripts/pre-push-check.sh
+```
+
+This script validates:
+
+- ✅ Code formatting (`cargo fmt`)
+- ✅ Lints (`cargo clippy`)
+- ✅ Build (debug + release)
+- ✅ All tests
+- ✅ Documentation
+- ✅ Deployment files
+- ✅ Security checks
+- ✅ CI simulation
+
+The pre-push hook runs automatically when you push.
+
+## �📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🔗 Resources
 
-- [Product Strategy](PRODUCT_STRATEGY.md) - Market analysis and monetization plan
 - [Vector Search Explained](docs/VECTOR_SEARCH_EXPLAINED.md) - AI/ML integration guide
 - [Rust Book](https://doc.rust-lang.org/book/) - Learn Rust
 - [RocksDB](https://rocksdb.org/) - Storage backend

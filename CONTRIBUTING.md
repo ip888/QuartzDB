@@ -25,17 +25,50 @@ QuartzDB is built on a distributed architecture with the following key component
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Install development tools
-cargo install cargo-edit cargo-watch cargo-nextest
+cargo install cargo-edit cargo-watch cargo-audit
 ```
 
-2. Build the Project:
+2. Setup Development Environment:
+```bash
+# Clone the repository
+git clone https://github.com/ip888/QuartzDB.git
+cd QuartzDB
+
+# Install git hooks and check dependencies
+./scripts/setup-dev.sh
+```
+
+3. Build the Project:
 ```bash
 cargo build
 ```
 
-3. Run Tests:
+4. Run Tests:
 ```bash
 cargo test
+```
+
+## Pre-Push Validation
+
+Before pushing code, **always** run the validation script:
+
+```bash
+./scripts/pre-push-check.sh
+```
+
+This automatically runs when you push (via git hook) and validates:
+
+- ✅ **Code Formatting** - Ensures code follows Rust style guide
+- ✅ **Clippy Lints** - Catches common mistakes and anti-patterns  
+- ✅ **Build** - Confirms project compiles (debug + release)
+- ✅ **Tests** - Runs all unit and integration tests
+- ✅ **Documentation** - Validates rustdoc builds
+- ✅ **Deployment** - Checks Docker and CI configurations
+- ✅ **Security** - Scans for hardcoded secrets and vulnerabilities
+
+**Skip the hook** (not recommended):
+```bash
+git push --no-verify
 ```
 
 ## Code Style

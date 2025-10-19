@@ -118,7 +118,10 @@ mod tests {
         let v1 = vec![1.0, 2.0, 3.0];
         let v2 = vec![1.0, 2.0, 3.0];
         let sim = cosine_similarity(&v1, &v2);
-        assert!(approx_eq(sim, 1.0), "Identical vectors should have similarity 1.0");
+        assert!(
+            approx_eq(sim, 1.0),
+            "Identical vectors should have similarity 1.0"
+        );
     }
 
     #[test]
@@ -126,7 +129,10 @@ mod tests {
         let v1 = vec![1.0, 0.0, 0.0];
         let v2 = vec![0.0, 1.0, 0.0];
         let sim = cosine_similarity(&v1, &v2);
-        assert!(approx_eq(sim, 0.0), "Orthogonal vectors should have similarity 0.0");
+        assert!(
+            approx_eq(sim, 0.0),
+            "Orthogonal vectors should have similarity 0.0"
+        );
     }
 
     #[test]
@@ -134,7 +140,10 @@ mod tests {
         let v1 = vec![1.0, 2.0, 3.0];
         let v2 = vec![-1.0, -2.0, -3.0];
         let sim = cosine_similarity(&v1, &v2);
-        assert!(approx_eq(sim, -1.0), "Opposite vectors should have similarity -1.0");
+        assert!(
+            approx_eq(sim, -1.0),
+            "Opposite vectors should have similarity -1.0"
+        );
     }
 
     #[test]
@@ -142,7 +151,10 @@ mod tests {
         let v1 = vec![1.0, 2.0, 3.0];
         let v2 = vec![1.0, 2.0, 3.0];
         let dist = euclidean_distance(&v1, &v2);
-        assert!(approx_eq(dist, 0.0), "Identical vectors should have distance 0.0");
+        assert!(
+            approx_eq(dist, 0.0),
+            "Identical vectors should have distance 0.0"
+        );
     }
 
     #[test]
@@ -150,7 +162,10 @@ mod tests {
         let v1 = vec![0.0, 0.0, 0.0];
         let v2 = vec![3.0, 4.0, 0.0];
         let dist = euclidean_distance(&v1, &v2);
-        assert!(approx_eq(dist, 5.0), "Distance should be 5.0 (3-4-5 triangle)");
+        assert!(
+            approx_eq(dist, 5.0),
+            "Distance should be 5.0 (3-4-5 triangle)"
+        );
     }
 
     #[test]
@@ -174,7 +189,10 @@ mod tests {
         let mut v = vec![3.0, 4.0, 0.0];
         normalize(&mut v);
         let mag = magnitude(&v);
-        assert!(approx_eq(mag, 1.0), "Normalized vector should have magnitude 1.0");
+        assert!(
+            approx_eq(mag, 1.0),
+            "Normalized vector should have magnitude 1.0"
+        );
         assert!(approx_eq(v[0], 0.6));
         assert!(approx_eq(v[1], 0.8));
     }

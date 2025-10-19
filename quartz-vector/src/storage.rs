@@ -16,7 +16,6 @@ struct IndexMetadata {
 
 const INDEX_VERSION: u32 = 1;
 const METADATA_KEY: &[u8] = b"__vector_index_metadata__";
-const HNSW_KEY: &[u8] = b"__vector_index_hnsw__";
 const VECTOR_PREFIX: &[u8] = b"__vector__";
 const METADATA_PREFIX: &[u8] = b"__vector_meta__";
 
@@ -28,15 +27,13 @@ pub struct PersistentVectorIndex {
 
 impl PersistentVectorIndex {
     /// Create a new persistent vector index
-    pub async fn create<P: AsRef<Path>>(
-        path: P,
-        config: VectorIndexConfig,
-    ) -> Result<Self> {
-        let path_str = path.as_ref().to_str()
+    pub async fn create<P: AsRef<Path>>(path: P, config: VectorIndexConfig) -> Result<Self> {
+        let path_str = path
+            .as_ref()
+            .to_str()
             .ok_or_else(|| VectorError::InvalidVector("Invalid path".to_string()))?;
-        
-        let storage = StorageEngine::new(path_str)
-            .map_err(|e| VectorError::StorageError(e))?;
+
+        let storage = StorageEngine::new(path_str).map_err(VectorError::StorageError)?;
 
         let index = VectorIndex::with_config(config.clone())?;
 
@@ -51,23 +48,28 @@ impl PersistentVectorIndex {
         let metadata_bytes = bincode::serialize(&metadata)
             .map_err(|e| VectorError::SerializationError(e.to_string()))?;
 
-        storage.put(METADATA_KEY, &metadata_bytes).await
-            .map_err(|e| VectorError::StorageError(e))?;
+        storage
+            .put(METADATA_KEY, &metadata_bytes)
+            .await
+            .map_err(VectorError::StorageError)?;
 
         Ok(Self { index, storage })
     }
 
     /// Open an existing persistent vector index
     pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let path_str = path.as_ref().to_str()
+        let path_str = path
+            .as_ref()
+            .to_str()
             .ok_or_else(|| VectorError::InvalidVector("Invalid path".to_string()))?;
-        
-        let storage = StorageEngine::new(path_str)
-            .map_err(|e| VectorError::StorageError(e))?;
+
+        let storage = StorageEngine::new(path_str).map_err(VectorError::StorageError)?;
 
         // Load metadata
-        let metadata_bytes = storage.get(METADATA_KEY).await
-            .map_err(|e| VectorError::StorageError(e))?
+        let metadata_bytes = storage
+            .get(METADATA_KEY)
+            .await
+            .map_err(VectorError::StorageError)?
             .ok_or_else(|| VectorError::InvalidVector("Index metadata not found".to_string()))?;
 
         let metadata: IndexMetadata = bincode::deserialize(&metadata_bytes)
@@ -95,16 +97,24 @@ impl PersistentVectorIndex {
         // Note: In production, we'd want a more efficient way to iterate keys
         // This is a simplified version
         let vector_ids = Self::list_vector_ids(&storage).await?;
-        
+
         for id in vector_ids {
             let vector_key = Self::vector_key(id);
-            if let Some(vector_bytes) = storage.get(&vector_key).await.map_err(|e| VectorError::StorageError(e))? {
+            if let Some(vector_bytes) = storage
+                .get(&vector_key)
+                .await
+                .map_err(VectorError::StorageError)?
+            {
                 let vector: Vector = bincode::deserialize(&vector_bytes)
                     .map_err(|e| VectorError::SerializationError(e.to_string()))?;
 
                 // Load metadata if exists
                 let meta_key = Self::metadata_key(id);
-                let metadata = if let Some(meta_bytes) = storage.get(&meta_key).await.map_err(|e| VectorError::StorageError(e))? {
+                let metadata = if let Some(meta_bytes) = storage
+                    .get(&meta_key)
+                    .await
+                    .map_err(VectorError::StorageError)?
+                {
                     let meta: String = bincode::deserialize(&meta_bytes)
                         .map_err(|e| VectorError::SerializationError(e.to_string()))?;
                     Some(meta)
@@ -132,22 +142,28 @@ impl PersistentVectorIndex {
         metadata: Option<String>,
     ) -> Result<()> {
         // Insert into in-memory index
-        self.index.insert_with_metadata(id, vector.clone(), metadata.clone()).await?;
+        self.index
+            .insert_with_metadata(id, vector.clone(), metadata.clone())
+            .await?;
 
         // Persist vector
         let vector_key = Self::vector_key(id);
         let vector_bytes = bincode::serialize(&vector)
             .map_err(|e| VectorError::SerializationError(e.to_string()))?;
-        self.storage.put(&vector_key, &vector_bytes).await
-            .map_err(|e| VectorError::StorageError(e))?;
+        self.storage
+            .put(&vector_key, &vector_bytes)
+            .await
+            .map_err(VectorError::StorageError)?;
 
         // Persist metadata if provided
         if let Some(meta) = metadata {
             let meta_key = Self::metadata_key(id);
             let meta_bytes = bincode::serialize(&meta)
                 .map_err(|e| VectorError::SerializationError(e.to_string()))?;
-            self.storage.put(&meta_key, &meta_bytes).await
-                .map_err(|e| VectorError::StorageError(e))?;
+            self.storage
+                .put(&meta_key, &meta_bytes)
+                .await
+                .map_err(VectorError::StorageError)?;
         }
 
         // TODO: Persist HNSW structure incrementally
@@ -171,8 +187,10 @@ impl PersistentVectorIndex {
 
         // Delete from storage
         let vector_key = Self::vector_key(id);
-        self.storage.delete(&vector_key).await
-            .map_err(|e| VectorError::StorageError(e))?;
+        self.storage
+            .delete(&vector_key)
+            .await
+            .map_err(VectorError::StorageError)?;
 
         // Delete metadata
         let meta_key = Self::metadata_key(id);
@@ -195,12 +213,12 @@ impl PersistentVectorIndex {
     pub fn ids(&self) -> Vec<VectorId> {
         self.index.ids()
     }
-    
+
     /// Get the dimension of vectors in this index
     pub fn dimension(&self) -> usize {
         self.index.dimension()
     }
-    
+
     /// Get the distance metric used by this index
     pub fn metric(&self) -> crate::DistanceMetric {
         self.index.metric()
@@ -230,18 +248,23 @@ impl PersistentVectorIndex {
         // This is a simplified version - in production we'd want a prefix scan
         // For now, we'll try common ID ranges
         let mut ids = Vec::new();
-        
+
         // Try IDs from 0 to 100000
         for id in 0..100000 {
             let key = Self::vector_key(id);
-            if storage.get(&key).await.map_err(|e| VectorError::StorageError(e))?.is_some() {
+            if storage
+                .get(&key)
+                .await
+                .map_err(VectorError::StorageError)?
+                .is_some()
+            {
                 ids.push(id);
             } else if id > 1000 && ids.is_empty() {
                 // Optimization: if we haven't found anything in the first 1000, stop
                 break;
             }
         }
-        
+
         Ok(ids)
     }
 }
@@ -263,8 +286,14 @@ mod tests {
             let mut index = PersistentVectorIndex::create(&path, config).await.unwrap();
 
             // Insert vectors
-            index.insert(1, Vector::new(vec![1.0, 0.0, 0.0])).await.unwrap();
-            index.insert(2, Vector::new(vec![0.0, 1.0, 0.0])).await.unwrap();
+            index
+                .insert(1, Vector::new(vec![1.0, 0.0, 0.0]))
+                .await
+                .unwrap();
+            index
+                .insert(2, Vector::new(vec![0.0, 1.0, 0.0]))
+                .await
+                .unwrap();
 
             assert_eq!(index.len(), 2);
         }
@@ -311,7 +340,10 @@ mod tests {
         let mut index = PersistentVectorIndex::create(&path, config).await.unwrap();
 
         // Insert and delete
-        index.insert(1, Vector::new(vec![1.0, 0.0, 0.0])).await.unwrap();
+        index
+            .insert(1, Vector::new(vec![1.0, 0.0, 0.0]))
+            .await
+            .unwrap();
         assert_eq!(index.len(), 1);
 
         index.delete(1).await.unwrap();
@@ -327,11 +359,14 @@ mod tests {
         let mut index = PersistentVectorIndex::create(&path, config).await.unwrap();
 
         // Insert with metadata
-        index.insert_with_metadata(
-            1,
-            Vector::new(vec![1.0, 0.0, 0.0]),
-            Some("test document".to_string()),
-        ).await.unwrap();
+        index
+            .insert_with_metadata(
+                1,
+                Vector::new(vec![1.0, 0.0, 0.0]),
+                Some("test document".to_string()),
+            )
+            .await
+            .unwrap();
 
         // Retrieve metadata
         let metadata = index.index.get_metadata(1);
