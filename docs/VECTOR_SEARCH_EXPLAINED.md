@@ -85,9 +85,9 @@ User searches: "athletic footwear"
 
 ### Architecture Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
-│                 APPLICATION                      │
+│                 APPLICATION                     │
 │  (Your AI app, e-commerce site, chatbot, etc.)  │
 └─────────────────┬───────────────────────────────┘
                   │
@@ -95,23 +95,23 @@ User searches: "athletic footwear"
                   │ 2. Search vectors
                   ↓
 ┌─────────────────────────────────────────────────┐
-│              QuartzDB API Server                 │
+│              QuartzDB API Server                │
 │  - REST API (HTTP)                              │
 │  - gRPC API (high performance)                  │
 └─────────────────┬───────────────────────────────┘
                   │
                   ↓
 ┌─────────────────────────────────────────────────┐
-│           Vector Search Engine                   │
-│  ┌──────────────┐  ┌──────────────┐            │
-│  │ Vector Index │  │ Similarity   │            │
-│  │ (HNSW/IVF)  │  │ Algorithms   │            │
-│  └──────────────┘  └──────────────┘            │
+│           Vector Search Engine                  │
+│  ┌──────────────┐  ┌──────────────┐             │
+│  │ Vector Index │  │ Similarity   │             │
+│  │ (HNSW/IVF)   │  │ Algorithms   │             │
+│  └──────────────┘  └──────────────┘             │
 └─────────────────┬───────────────────────────────┘
                   │
                   ↓
 ┌─────────────────────────────────────────────────┐
-│          Storage Layer (Existing!)               │
+│          Storage Layer (Existing!)              │
 │  - LSM Tree (for fast writes)                   │
 │  - WAL (durability)                             │
 │  - Cache (speed)                                │
@@ -137,19 +137,19 @@ struct VectorDocument {
 
 Three main ways to measure "similarity":
 
-**a) Cosine Similarity** (most common)
+##### a) Cosine Similarity (most common)
 
 - Measures angle between vectors
 - Range: -1 to 1 (1 = identical, -1 = opposite)
 - Best for: Text, semantic search
 
-**b) Euclidean Distance**
+##### b) Euclidean Distance
 
 - Measures straight-line distance
 - Range: 0 to ∞ (0 = identical)
 - Best for: Image embeddings, spatial data
 
-**c) Dot Product**
+##### c) Dot Product
 
 - Mathematical multiplication
 - Faster but needs normalized vectors
