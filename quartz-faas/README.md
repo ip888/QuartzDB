@@ -6,8 +6,9 @@ Serverless edge API for QuartzDB running on Cloudflare Workers.
 
 - ✅ Key-Value storage API
 - ✅ Vector search API  
-- 🚧 Durable Objects integration (coming soon)
-- 🚧 Edge caching (coming soon)
+- ✅ Durable Objects integration
+- ✅ Persistent state management
+- ✅ Edge caching via Durable Objects
 
 ## API Endpoints
 
@@ -72,7 +73,9 @@ wrangler dev
 
 The FaaS layer provides:
 1. **HTTP API** - REST endpoints for storage and vector operations
-2. **Durable Objects** (planned) - Consistent, low-latency state management
+2. **Durable Objects** - Strongly consistent, low-latency state management
+   - `StorageObject` - Key-value data with memory + persistent storage
+   - `VectorIndexObject` - Vector embeddings with cosine similarity search
 3. **Edge Computing** - Global deployment for <50ms latency
 4. **Auto-scaling** - Serverless infrastructure scales automatically
 
@@ -92,10 +95,13 @@ Cloudflare Workers Free Tier:
 
 ## Status
 
-🚧 **In Development** - Week 1 implementation in progress
+🚧 **Week 1 - Day 2** Complete!
+
+Completed:
+1. ✅ Basic API scaffold
+2. ✅ Durable Objects integration
 
 Next steps:
-1. ✅ Basic API scaffold
-2. ⏳ Durable Objects integration
 3. ⏳ Production deployment
 4. ⏳ Monitoring and analytics
+5. ⏳ Authentication & API keys
