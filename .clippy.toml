@@ -1,0 +1,41 @@
+# Clippy Configuration for QuartzDB
+# Professional-grade Rust linting configuration
+
+# Deny these lints (treat as errors)
+[lints.clippy]
+# Correctness lints
+correctness = "deny"
+suspicious = "deny"
+
+# Style lints
+style = "warn"
+complexity = "warn"
+perf = "warn"
+
+# Pedantic lints (best practices)
+pedantic = "warn"
+
+# Nursery lints (cutting-edge checks)
+nursery = "warn"
+
+# Cargo lints
+cargo = "warn"
+
+# Allow some pedantic lints that can be too strict
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+
+# Specific lints to enforce
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+
+[lints.rust]
+unsafe_code = "warn"
+missing_debug_implementations = "warn"
+missing_copy_implementations = "warn"
