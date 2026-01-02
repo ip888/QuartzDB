@@ -14,6 +14,7 @@ Cargo.lock
 
 # Development history (private)
 docs/DAY*_*.md
+docs/internal/
 STRATEGIC_ANALYSIS.md
 NEXT_STEPS.md
 PRODUCT_STRATEGY.md
