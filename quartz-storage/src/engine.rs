@@ -10,6 +10,20 @@ use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 /// Configuration for the storage engine
+///
+/// Controls various performance and durability parameters of the storage engine.
+/// 
+/// # Examples
+///
+/// ```
+/// use quartz_storage::StorageConfig;
+///
+/// let config = StorageConfig {
+///     cache_size: 10000,
+///     enable_wal: true,
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Clone, Debug)]
 pub struct StorageConfig {
     /// Maximum cache size (number of entries)
@@ -34,6 +48,58 @@ impl Default for StorageConfig {
 }
 
 /// Integrated storage engine combining RocksDB, LSM tree, cache, and WAL
+///
+/// This is the main entry point for all storage operations in QuartzDB.
+/// It provides a high-performance, durable key-value store with the following components:
+///
+/// - **RocksDB**: Persistent storage backend  
+/// - **LSM Tree**: Multi-level compaction strategy for write optimization
+/// - **Cache Manager**: In-memory LRU cache for hot data
+/// - **Write-Ahead Log (WAL)**: Ensures durability and crash recovery
+///
+/// # Architecture
+///
+/// The storage engine uses a layered approach:
+/// 1. Writes go to WAL (if enabled) for durability
+/// 2. Data is cached in memory for fast reads
+/// 3. Persistent data is stored in RocksDB
+/// 4. Background compaction maintains optimal performance
+///
+/// # Examples
+///
+/// Basic usage:
+///
+/// ```no_run
+/// use quartz_storage::StorageEngine;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let engine = StorageEngine::new("./data/db")?;
+/// 
+/// // Write data
+/// engine.put(b"key", b"value").await?;
+/// 
+/// // Read data
+/// let value = engine.get(b"key").await?;
+/// assert_eq!(value, Some(b"value".to_vec()));
+/// # Ok(())
+/// # }
+/// ```
+///
+/// With custom configuration:
+///
+/// ```no_run
+/// use quartz_storage::{StorageEngine, StorageConfig};
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let config = StorageConfig {
+///     cache_size: 10000,
+///     enable_wal: true,
+///     ..Default::default()
+/// };
+/// let engine = StorageEngine::with_config("./data/db", config)?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct StorageEngine {
     db: DB,
     path: PathBuf,
@@ -47,6 +113,32 @@ pub struct StorageEngine {
 
 impl StorageEngine {
     /// Create a new storage engine with default configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Directory path where the database will be stored
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the initialized storage engine or an error
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The path cannot be created or accessed
+    /// - RocksDB initialization fails
+    /// - WAL initialization fails (if enabled)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use quartz_storage::StorageEngine;
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let engine = StorageEngine::new("./data/db")?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new(path: &str) -> Result<Self> {
         Self::with_config(path, StorageConfig::default())
     }

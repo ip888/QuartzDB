@@ -155,7 +155,8 @@ impl HnswIndex {
         }
 
         // Find nearest neighbors and add connections
-        let entry_id = self.entry_point.unwrap();
+        let entry_id = self.entry_point
+            .ok_or_else(|| VectorError::IndexError("Entry point not initialized".to_string()))?;
         let mut current_nearest = vec![entry_id];
 
         // Search from top layer down to target layer + 1
@@ -235,7 +236,8 @@ impl HnswIndex {
             return Ok(Vec::new());
         }
 
-        let entry_id = self.entry_point.unwrap();
+        let entry_id = self.entry_point
+            .ok_or_else(|| VectorError::IndexError("Entry point not initialized".to_string()))?;
         let mut current_nearest = vec![entry_id];
 
         // Search from top layer down to layer 1
@@ -251,10 +253,11 @@ impl HnswIndex {
         let mut results: Vec<SearchResult> = current_nearest
             .iter()
             .take(k)
-            .map(|&id| {
-                let vector = self.vectors.get(&id).unwrap();
-                let score = self.metric.calculate(query, vector);
-                SearchResult::new(id, score)
+            .filter_map(|&id| {
+                self.vectors.get(&id).map(|vector| {
+                    let score = self.metric.calculate(query, vector);
+                    SearchResult::new(id, score)
+                })
             })
             .collect();
 
