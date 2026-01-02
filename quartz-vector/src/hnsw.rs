@@ -13,6 +13,7 @@ use crate::{DistanceMetric, Result, SearchResult, VectorError, VectorId};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
+use tracing::{debug, info, instrument, warn};
 
 /// Configuration for HNSW index
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,18 +137,22 @@ impl HnswIndex {
     }
 
     /// Insert a vector into the index
+    #[instrument(skip(self, vector), fields(id = %id, vector_dim = vector.len()))]
     pub fn insert(&mut self, id: VectorId, vector: &[f32]) -> Result<()> {
+        debug!("Inserting vector into HNSW index");
         // Store vector data
         self.vectors.insert(id, vector.to_vec());
 
         // Select layer for this element
         let level = self.select_layer();
+        debug!(level, "Selected layer for new vector");
 
         // Create node
         let mut node = HnswNode::new(id, level);
 
         // If this is the first element
         if self.entry_point.is_none() {
+            info!("First element, setting as entry point");
             self.entry_point = Some(id);
             self.max_layer = level;
             self.nodes.insert(id, node);
@@ -222,17 +227,22 @@ impl HnswIndex {
 
         // Update entry point if this node is at a higher layer
         if level > self.max_layer {
+            info!(old_max = self.max_layer, new_max = level, "Updating max layer and entry point");
             self.max_layer = level;
             self.entry_point = Some(id);
         }
 
         self.nodes.insert(id, node);
+        debug!(total_nodes = self.nodes.len(), "Vector inserted successfully");
         Ok(())
     }
 
     /// Search for k nearest neighbors
+    #[instrument(skip(self, query), fields(query_dim = query.len(), k))]
     pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
+        debug!("Starting vector search");
         if self.entry_point.is_none() {
+            warn!("Index is empty, returning empty results");
             return Ok(Vec::new());
         }
 
@@ -241,12 +251,14 @@ impl HnswIndex {
         let mut current_nearest = vec![entry_id];
 
         // Search from top layer down to layer 1
+        debug!(max_layer = self.max_layer, "Searching through layers");
         for layer in (1..=self.max_layer).rev() {
             current_nearest = self.search_layer(query, &current_nearest, 1, layer)?;
         }
 
         // Search layer 0 with ef_search
         let ef = self.config.ef_search.max(k);
+        debug!(ef, "Searching layer 0");
         current_nearest = self.search_layer(query, &current_nearest, ef, 0)?;
 
         // Return top k results
@@ -263,11 +275,14 @@ impl HnswIndex {
 
         // Sort by score
         results.sort();
+        info!(results_count = results.len(), "Search completed");
         Ok(results)
     }
 
     /// Delete a vector from the index
+    #[instrument(skip(self), fields(id = %id))]
     pub fn delete(&mut self, id: VectorId) -> Result<()> {
+        debug!("Deleting vector from index");
         let node = self.nodes.remove(&id).ok_or(VectorError::NotFound(id))?;
 
         // Remove all connections to this node

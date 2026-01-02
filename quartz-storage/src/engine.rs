@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
+use tracing::{debug, info, instrument, warn};
 
 /// Configuration for the storage engine
 ///
@@ -139,12 +140,16 @@ impl StorageEngine {
     /// # Ok(())
     /// # }
     /// ```
+    #[instrument(skip_all, fields(path = %path))]
     pub fn new(path: &str) -> Result<Self> {
+        info!("Initializing storage engine");
         Self::with_config(path, StorageConfig::default())
     }
 
     /// Create a new storage engine with custom configuration
+    #[instrument(skip_all, fields(path = %path, cache_size = config.cache_size, enable_wal = config.enable_wal))]
     pub fn with_config(path: &str, config: StorageConfig) -> Result<Self> {
+        info!("Creating storage engine with custom config");
         let path_buf = PathBuf::from(path);
 
         // Initialize RocksDB
@@ -208,12 +213,16 @@ impl StorageEngine {
     }
 
     /// Get a value by key (checks cache first, then RocksDB)
+    #[instrument(skip(self, key), fields(key_len = key.len()))]
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        debug!("Get operation started");
         // Check cache first
         if let Some(value) = self.cache.get(key).await {
+            debug!("Cache hit");
             return Ok(Some(value));
         }
 
+        debug!("Cache miss, checking LSM tree");
         // Check LSM tree for file location
         if let Some(_file_id) = self.lsm.search(key).await {
             // In a real implementation, we'd read from the SSTable file
@@ -221,20 +230,27 @@ impl StorageEngine {
         }
 
         // Fall back to RocksDB
+        debug!("Querying RocksDB");
         let value = self.db.get(key)?;
 
         // Update cache if found
         if let Some(ref v) = value {
+            debug!(value_len = v.len(), "Value found, updating cache");
             self.cache.put(key.to_vec(), v.clone()).await;
+        } else {
+            debug!("Value not found");
         }
 
         Ok(value)
     }
 
     /// Put a key-value pair (writes to WAL, cache, and RocksDB)
+    #[instrument(skip(self, key, value), fields(key_len = key.len(), value_len = value.len()))]
     pub async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        debug!("Put operation started");
         // Write to WAL first (durability)
         if self.config.enable_wal {
+            debug!("Writing to WAL");
             let mut wal = self.wal.lock().await;
             if let Some(wal) = wal.as_mut() {
                 let record = format!(
@@ -247,18 +263,24 @@ impl StorageEngine {
         }
 
         // Write to RocksDB
+        debug!("Writing to RocksDB");
         self.db.put(key, value)?;
 
         // Update cache
+        debug!("Updating cache");
         self.cache.put(key.to_vec(), value.to_vec()).await;
 
+        info!("Put operation completed successfully");
         Ok(())
     }
 
     /// Delete a key (writes to WAL and RocksDB)
+    #[instrument(skip(self, key), fields(key_len = key.len()))]
     pub async fn delete(&self, key: &[u8]) -> Result<()> {
+        debug!("Delete operation started");
         // Write to WAL first
         if self.config.enable_wal {
+            debug!("Writing delete to WAL");
             let mut wal = self.wal.lock().await;
             if let Some(wal) = wal.as_mut() {
                 let record = format!("DELETE:{}", String::from_utf8_lossy(key));
@@ -267,11 +289,14 @@ impl StorageEngine {
         }
 
         // Delete from RocksDB
+        debug!("Deleting from RocksDB");
         self.db.delete(key)?;
 
         // Remove from cache
+        debug!("Removing from cache");
         self.cache.remove(key).await;
 
+        info!("Delete operation completed successfully");
         Ok(())
     }
 
