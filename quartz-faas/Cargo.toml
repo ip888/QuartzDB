@@ -8,7 +8,7 @@ description = "QuartzDB FaaS - Cloudflare Workers integration"
 license.workspace = true
 
 [dependencies]
-worker = "0.4"
+worker = "0.7.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

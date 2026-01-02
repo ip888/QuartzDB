@@ -6,12 +6,7 @@ workers_dev = true
 [build]
 command = "cargo install -q worker-build && worker-build --release"
 
-[build.upload]
-format = "modules"
-dir = "build/worker"
-main = "./shim.mjs"
-
-[[build.upload.rules]]
+[[rules]]
 globs = ["**/*.wasm"]
 type = "CompiledWasm"
 
