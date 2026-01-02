@@ -8,6 +8,7 @@ members = [
     "quartz-client",
     "quartz-server",
     "quartz-vector",
+    "quartz-faas",
 ]
 
 [workspace.package]

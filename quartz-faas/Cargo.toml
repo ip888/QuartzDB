@@ -1,0 +1,25 @@
+[package]
+name = "quartz-faas"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "QuartzDB FaaS - Cloudflare Workers integration"
+license.workspace = true
+
+[dependencies]
+worker = "0.4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+quartz-core = { path = "../quartz-core" }
+quartz-storage = { path = "../quartz-storage" }
+quartz-vector = { path = "../quartz-vector" }
+console_error_panic_hook = "0.1.7"
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
