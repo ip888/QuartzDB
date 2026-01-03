@@ -52,13 +52,36 @@ impl RequestMetrics {
         );
     }
 
-    /// Send to Analytics Engine (if enabled)
-    /// Note: Analytics Engine implementation is optional
-    /// For now, we rely on console_log which appears in wrangler tail
-    pub fn track(&self, _env: &Env) -> Result<()> {
-        // TODO: Implement Analytics Engine when the API is stable
-        // For now, console_log (from the log() method) is sufficient
-        // and will show up in wrangler tail
+    /// Send to Analytics Engine for structured analytics and querying
+    /// Uses Cloudflare Workers Analytics Engine with proper builder pattern
+    /// See: https://developers.cloudflare.com/analytics/analytics-engine/
+    pub fn track(&self, env: &Env) -> Result<()> {
+        // Try to get Analytics Engine dataset binding
+        match env.analytics_engine("ANALYTICS") {
+            Ok(dataset) => {
+                // Build data point with indexes (fast queries) and blobs (context)
+                // Indexes: numeric values for fast aggregation
+                // Blobs: string/binary data for filtering
+                match AnalyticsEngineDataPointBuilder::new()
+                    .indexes(&[env!("CARGO_PKG_VERSION")])  // index1: version
+                    .add_double(self.status as f64)          // double1: HTTP status
+                    .add_double(self.duration_ms as f64)     // double2: latency
+                    .add_blob(self.method.as_str())          // blob1: HTTP method
+                    .add_blob(self.path.as_str())            // blob2: request path
+                    .write_to(&dataset)
+                {
+                    Ok(_) => {},
+                    Err(e) => {
+                        // Best-effort - don't fail request if analytics fail
+                        console_warn!("Analytics Engine write failed: {:?}", e);
+                    }
+                }
+            },
+            Err(_) => {
+                // Analytics Engine not configured - acceptable for local development
+                // Production should have [[analytics_engine_datasets]] in wrangler.toml
+            }
+        }
         Ok(())
     }
 }

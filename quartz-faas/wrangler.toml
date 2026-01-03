@@ -21,6 +21,11 @@ script_name = "quartz-faas"
 tag = "v1"
 new_classes = ["StorageObject", "VectorIndexObject"]
 
+# Analytics Engine Configuration
+# Provides structured event logging and metrics
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+
 [env.production]
 name = "quartz-faas-prod"
 workers_dev = false
