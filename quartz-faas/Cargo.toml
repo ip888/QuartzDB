@@ -13,10 +13,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-quartz-core = { path = "../quartz-core" }
-quartz-storage = { path = "../quartz-storage" }
-quartz-vector = { path = "../quartz-vector" }
 console_error_panic_hook = "0.1.7"
+
+# Note: quartz-core, quartz-storage, quartz-vector are NOT compatible with WASM
+# The FaaS layer uses Durable Objects for storage, not RocksDB
+# API types are defined directly in src/api.rs
 
 [dev-dependencies]
 tokio = { workspace = true }
