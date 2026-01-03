@@ -8,12 +8,13 @@ description = "QuartzDB FaaS - Cloudflare Workers integration"
 license.workspace = true
 
 [dependencies]
-worker = "0.7.1"
+worker = "0.7.2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 console_error_panic_hook = "0.1.7"
+wasm-bindgen = "0.2"
 
 # Note: quartz-core, quartz-storage, quartz-vector are NOT compatible with WASM
 # The FaaS layer uses Durable Objects for storage, not RocksDB

@@ -12,6 +12,12 @@ Cargo.lock
 *.db
 *.log
 
+# Wrangler / Cloudflare Workers
+.wrangler/
+quartz-faas/build/
+quartz-faas/node_modules/
+*.wasm
+
 # Development history (private)
 docs/DAY*_*.md
 docs/internal/

@@ -1,6 +1,5 @@
 //! Monitoring and analytics utilities
 
-use std::time::Instant;
 use std::sync::atomic::{AtomicU64, Ordering};
 use worker::*;
 
@@ -64,20 +63,20 @@ impl RequestMetrics {
     }
 }
 
-/// Timer for measuring operation duration
+/// Timer for measuring operation duration using JS Date
 pub struct Timer {
-    start: Instant,
+    start: f64,
 }
 
 impl Timer {
     pub fn new() -> Self {
         Self {
-            start: Instant::now(),
+            start: js_sys::Date::now(),
         }
     }
 
     pub fn elapsed_ms(&self) -> u128 {
-        self.start.elapsed().as_millis()
+        (js_sys::Date::now() - self.start) as u128
     }
 }
 
