@@ -1,433 +1,343 @@
 # QuartzDB
 
-> **AI-First Edge Database** - High-performance distributed database optimized for AI/ML workloads at the edge
+> **Serverless Edge Database** - High-performance vector search engine running on Cloudflare Workers
 
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com)
+[![Cloudflare Workers](https://img.shields.io/badge/cloudflare-workers-orange.svg)](https://workers.cloudflare.com/)
 
-QuartzDB is a high-performance distributed edge database designed for modern cloud-native and AI applications. It provides automatic data locality optimization, built-in edge caching with smart replication, and specialized support for AI/ML workloads including vector search for embeddings.
+QuartzDB is a serverless vector search database built on Cloudflare Workers and Durable Objects. It provides high-performance similarity search for embeddings with sub-10ms latency from 300+ edge locations worldwide.
 
 ## ✨ Key Features
 
 ### Currently Implemented ✅
 
-- **Integrated Storage Engine**
-  - LSM Tree with multi-level compaction
-  - Write-Ahead Logging (WAL) for durability
-  - High-performance cache with configurable size
-  - Background compaction management
-  - ~2µs read latency (cache hits)
-  - ~3-6µs write latency
+- **Serverless Vector Search**
+  - Runs on Cloudflare Workers (WASM)
+  - Durable Objects for persistent storage
+  - HNSW algorithm for fast approximate nearest neighbor search
+  - Cosine similarity metric for embeddings
+  - 384-dimensional vector support
+  - Global distribution across 300+ locations
+  - Automatic scaling and zero maintenance
+  - Pay-per-request pricing model
 
-- **Client SDK**
-  - Connection pooling with configurable limits
-  - Automatic retry with exponential backoff
-  - Query result caching
-  - Performance metrics tracking
-  - Thread-safe operations
+- **Vector Operations**
+  - Insert/Search/Delete vectors
+  - Batch operations (batch-insert)
+  - Get vector by ID
+  - Metadata support for vectors
+  - Soft-delete for efficient space management
+  - Performance statistics and monitoring
+
+- **REST API**
+  - Simple HTTP endpoints
+  - JSON request/response format
+  - API key authentication
+  - Health checks and monitoring
+  - Error handling and logging
 
 - **Production Ready**
-  - Comprehensive test suite (100+ tests)
-  - Performance benchmarks
-  - Example code and documentation
-  - Rust 2024 edition
-
-- **HTTP API Server**
-  - RESTful endpoints for CRUD operations
-  - Health checks and statistics
-  - Request/response logging
-  - CORS and compression middleware
-  - JSON-based API
-  - Comprehensive documentation with examples
+  - Smart batched persistence (10-second windows)
+  - Quota-optimized for free tier
+  - Sub-100ms write latency (non-blocking)
+  - Rust 2024 edition with WASM compilation
+  - Tested and deployed on Cloudflare
+  - Custom domain support (api.quartzdb.io)
 
 ### Coming Soon 🚀
 
-- **Vector Search Module**
-  - HNSW indexing for AI embeddings
-  - Similarity search (cosine, euclidean, dot product)
-  - Integration with OpenAI, Cohere, Hugging Face
-  
-- **gRPC API Server**
-  - High-performance gRPC interface
-  - Authentication & authorization
-  - Streaming support
-  
-- **Edge Computing**
-  - Automatic data locality
-  - Multi-region consistency
-  - Smart replication
+- **Advanced Features**
+  - Multi-metric similarity search (L2, Hamming)
+  - Graph-based vector indexing optimization
+  - Vector dimensionality flexibility (not just 384)
+  - Query analytics and usage tracking
 
 ## 🏗️ Architecture
 
 ```text
-┌─────────────────────────────────────────────────────────┐
-│                     Client Application                  │
-└─────────────────┬───────────────────────────────────────┘
-                  │
-                  ↓
-┌─────────────────────────────────────────────────────────┐
-│                    QuartzDB Client SDK                  │
-│  • Connection Pooling  • Retry Logic  • Metrics         │
-└─────────────────┬───────────────────────────────────────┘
-                  │
-                  ↓
-┌─────────────────────────────────────────────────────────┐
-│                   Storage Engine (Core)                 │
-│  ┌──────────┐  ┌───────────┐  ┌──────────┐              │ 
-│  │  Cache   │  │  LSM Tree │  │   WAL    │              │
-│  │ Manager  │  │ (Levels)  │  │  (Log)   │              │
-│  └──────────┘  └───────────┘  └──────────┘              │
-│                        │                                │
-│                        ↓                                │
-│                  ┌─────────────┐                        │
-│                  │  RocksDB    │                        │
-│                  │  (Backend)  │                        │
-│                  └─────────────┘                        │
-└─────────────────────────────────────────────────────────┘
+                    ┌─────────────────────────────┐
+                    │   Client Application        │
+                    └─────────────┬───────────────┘
+                                  │
+                     HTTPS Request │ (REST API)
+                                  │
+                                  ▼
+        ┌─────────────────────────────────────────────────┐
+        │   Cloudflare Workers (Edge Runtime)             │
+        │   • WASM-compiled Rust code                     │
+        │   • Runs at 300+ global locations               │
+        │   • Sub-10ms cold start                         │
+        └─────────────┬───────────────────────────────────┘
+                      │
+                      │ RPC Call
+                      ▼
+        ┌─────────────────────────────────────────────────┐
+        │   Durable Objects (Persistent Storage)          │
+        │                                                  │
+        │   ┌──────────────────┐  ┌──────────────────┐    │
+        │   │ StorageObject    │  │ VectorIndexObject│    │
+        │   │                  │  │                  │    │
+        │   │ • RefCell cache  │  │ • Vector store   │    │
+        │   │ • KV persistence │  │ • Cosine search  │    │
+        │   │ • Strong consist │  │ • Metadata mgmt  │    │
+        │   └──────────────────┘  └──────────────────┘    │
+        │                                                  │
+        │   Durable Object Storage (SQLite-backed)        │
+        └──────────────────────────────────────────────────┘
+                              │
+                              │ Analytics
+                              ▼
+                  ┌──────────────────────┐
+                  │ Analytics Engine     │
+                  │ • Request metrics    │
+                  │ • Performance data   │
+                  └──────────────────────┘
 ```
 
-### Storage Layer Components
+### Key Components
 
-1. **Cache Manager**: In-memory LRU cache for hot data
-2. **LSM Tree**: Log-Structured Merge-tree for efficient writes
-3. **Write-Ahead Log**: Ensures durability and crash recovery
-4. **Compaction Manager**: Background task for level compaction
-5. **RocksDB**: Proven storage backend
+1. **Workers Runtime**: Handles HTTP requests at the edge
+2. **Durable Objects**: Stateful compute with persistent storage
+3. **StorageObject**: Key-value storage with caching
+4. **VectorIndexObject**: Vector similarity search
+5. **Analytics Engine**: Request tracking and monitoring
 
 ## 🚀 Quick Start
 
-- Rust 1.75 or higher
-- Cargo
-- (Optional) Docker for containerized deployment
+### Prerequisites
 
-### Installation
+- Rust 1.89+ with `wasm32-unknown-unknown` target
+- Node.js 20+
+- Wrangler CLI (Cloudflare Workers CLI)
 
-Add QuartzDB to your `Cargo.toml`:
+```bash
+# Install Rust WASM target
+rustup target add wasm32-unknown-unknown
 
-```toml
-[dependencies]
-quartz-client = { path = "path/to/QuartzDB/quartz-client" }
-quartz-storage = { path = "path/to/QuartzDB/quartz-storage" }
+# Install Wrangler
+npm install -g wrangler
+
+# Install worker-build (Rust → WASM compiler)
+npm install -g @cloudflare/workers-rs
 ```
 
-### Basic Usage
+### Development
 
-```rust
-use quartz_storage::{StorageEngine, StorageConfig};
+```bash
+# Navigate to quartz-faas directory
+cd quartz-faas
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create storage engine
-    let storage = StorageEngine::new("./data/my_db")?;
+# Build WASM
+wrangler build
 
-    // Write data
-    storage.put(b"user:1", b"Alice").await?;
-    
-    // Read data
-    if let Some(value) = storage.get(b"user:1").await? {
-        println!("Value: {}", String::from_utf8_lossy(&value));
-    }
-    
-    // Delete data
-    storage.delete(b"user:1").await?;
+# Run locally with Miniflare
+wrangler dev
 
-    Ok(())
+# Test the API
+curl http://localhost:8787/health
+```
+
+### Deployment
+
+```bash
+# Login to Cloudflare
+wrangler login
+
+# Deploy to production
+wrangler deploy
+
+# Your API is now live at:
+# https://quartzdb.<your-subdomain>.workers.dev
+```
+
+## 📡 API Reference
+
+### Health Check
+
+```bash
+GET /health
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-01-02T21:00:00Z"
 }
 ```
 
-### Custom Configuration
+### Key-Value Operations
 
-```rust
-use quartz_storage::{StorageEngine, StorageConfig};
-
-let config = StorageConfig {
-    cache_size: 5000,           // 5000 entries
-    compaction_threshold: 4,    // Compact at 4 levels
-    max_level_size: 20,         // Max 20 SSTables per level
-    enable_wal: true,           // Enable durability
-};
-
-let storage = StorageEngine::with_config("./data/custom_db", config)?;
-```
-
-### Background Compaction
-
-```rust
-// Start background compaction
-storage.start_compaction().await;
-
-// Your application logic here...
-
-// Stop compaction on shutdown
-storage.stop_compaction().await;
-```
-
-### HTTP API Server
-
-QuartzDB includes a production-ready HTTP API server built with Axum:
-
+**Store a value:**
 ```bash
-# Start the server with defaults (port 3000)
-cargo run -p quartz-server
+POST /api/put
+Content-Type: application/json
 
-# Custom configuration
-QUARTZ_PORT=8080 QUARTZ_CACHE_SIZE=50000 cargo run -p quartz-server
+{
+  "key": "user:123",
+  "value": "Alice"
+}
 ```
 
-**API Endpoints:**
-
+**Retrieve a value:**
 ```bash
-# Health check
-curl http://localhost:3000/api/v1/health
-
-# Get storage statistics
-curl http://localhost:3000/api/v1/stats
-
-# Store a value
-curl -X POST http://localhost:3000/api/v1/kv/user:1 \
-  -H "Content-Type: application/json" \
-  -d '{"value": "Alice"}'
-
-# Retrieve a value
-curl http://localhost:3000/api/v1/kv/user:1
-
-# Delete a key
-curl -X DELETE http://localhost:3000/api/v1/kv/user:1
+GET /api/get/user:123
 ```
 
-**Try the example client:**
+**Response:**
+```json
+{
+  "key": "user:123",
+  "value": "Alice"
+}
+```
 
+**Delete a key:**
 ```bash
-cargo run -p quartz-server --example simple_client
+DELETE /api/delete/user:123
 ```
 
-See [`quartz-server/API.md`](quartz-server/API.md) for complete API documentation.
+### Vector Operations
+
+**Insert a vector:**
+```bash
+POST /api/vector/insert
+Content-Type: application/json
+
+{
+  "id": 1,
+  "vector": [0.1, 0.2, 0.3, ...],
+  "metadata": {
+    "label": "example",
+    "source": "openai"
+  }
+}
+```
+
+**Search for similar vectors:**
+```bash
+POST /api/vector/search
+Content-Type: application/json
+
+{
+  "query": [0.1, 0.2, 0.3, ...],
+  "k": 10,
+  "metric": "cosine"
+}
+```
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "id": 1,
+      "distance": 0.95,
+      "metadata": { "label": "example" }
+    }
+  ]
+}
+```
+
+See [`quartz-faas/README.md`](quartz-faas/README.md) for complete API documentation.
 
 ## 📊 Performance
 
-Based on our benchmarks (M1 Mac, SSD):
+Running on Cloudflare Workers globally:
 
-| Operation | Latency | Throughput |
-|-----------|---------|------------|
-| **Cache Hit Read** | ~2µs | 500K ops/sec |
-| **Cache Miss Read** | ~2µs | 490K ops/sec |
-| **Write (WAL disabled)** | ~3µs | 340K ops/sec |
-| **Write (WAL enabled)** | ~6µs | 160K ops/sec |
-| **Delete** | ~5µs | 200K ops/sec |
-| **Concurrent Writes (8)** | ~50µs | 160K ops/sec |
+| Metric | Value |
+|--------|-------|
+| **Write Latency (P50)** | ~100ms (network included) |
+| **Write Latency (no network)** | ~2-3ms (non-blocking, batched) |
+| **Cold Start** | < 10ms |
+| **API Latency (P50)** | < 20ms |
+| **API Latency (P99)** | < 50ms |
+| **Vector Dimension** | 384 |
+| **Search Algorithm** | HNSW (Hierarchical Navigable Small World) |
+| **Similarity Metric** | Cosine distance |
+| **Global Locations** | 300+ |
+| **Scaling** | Automatic |
+| **Max Request Size** | 100 MB |
+| **Durable Objects** | Millisecond persistence |
+| **Persistence Strategy** | Smart batched (10-second windows) |
 
-Run your own benchmarks:
-
-```bash
-cargo bench -p quartz-storage
-```
+*Performance varies by region and workload. Write latency includes network roundtrip; actual DB operation is 2-3ms.*
 
 ## 📦 Project Structure
 
 ```text
 QuartzDB/
-├── quartz-core/          # Core database types and logic
+├── quartz-faas/          # ⭐ Main Application (Cloudflare Workers)
 │   ├── src/
-│   │   ├── types.rs      # Core data types
-│   │   ├── query.rs      # Query engine
-│   │   └── transaction.rs # Transaction support
-│   └── tests/
+│   │   ├── lib.rs        # Worker entry point
+│   │   ├── api.rs        # REST API handlers
+│   │   ├── durable.rs    # Durable Objects implementation
+│   │   ├── monitoring.rs # Analytics tracking
+│   │   └── error.rs      # Error handling
+│   ├── wrangler.toml     # Cloudflare Workers config
+│   ├── Cargo.toml        # Rust dependencies
+│   └── README.md         # API documentation
 │
-├── quartz-storage/       # Storage engine (✅ Complete)
-│   ├── src/
-│   │   ├── engine.rs     # Integrated storage engine
-│   │   ├── lsm.rs        # LSM tree implementation
-│   │   ├── wal.rs        # Write-ahead log
-│   │   ├── cache.rs      # Cache manager
-│   │   └── compaction.rs # Compaction manager
-│   ├── tests/            # Integration tests
-│   ├── benches/          # Performance benchmarks
-│   └── examples/         # Usage examples
+├── docs/                 # Technical documentation
+│   ├── HNSW_EXPLAINED.md
+│   └── VECTOR_SEARCH_EXPLAINED.md
 │
-├── quartz-network/       # Networking layer
-│   └── src/lib.rs
-│
-├── quartz-edge/          # Edge computing components
-│   └── src/lib.rs
+├── Cargo.toml            # Workspace configuration
+├── README.md             # This file
+├── LICENSE               # MIT license
+├── DEPLOYMENT_STATUS.md  # Current deployment status
+└── PRODUCTION_ROADMAP.md # Future plans
+```
 │
 ├── quartz-client/        # Client SDK (✅ Complete)
-│   ├── src/
-│   │   ├── lib.rs        # Client implementation
-│   │   └── metrics.rs    # Performance metrics
-│   └── tests/
-│
-├── quartz-server/        # HTTP API Server (✅ Complete)
-│   ├── src/
-│   │   ├── lib.rs        # API handlers and router
-│   │   └── main.rs       # Server binary
-│   ├── tests/            # API integration tests (13)
-│   ├── examples/         # Client usage examples
-│   └── API.md            # Complete API documentation
-│
-└── docs/                 # Documentation
-    ├── VECTOR_SEARCH_EXPLAINED.md
-    └── PRODUCT_STRATEGY.md
-```
 
-## 🧪 Testing
+## 🔒 Security & Compliance
 
-### Run All Tests
+- **Data Persistence**: Durable Objects provide automatic persistence
+- **Edge Security**: Cloudflare's global security infrastructure
+- **HTTPS Only**: All traffic encrypted in transit
+- **DDoS Protection**: Built-in Cloudflare protection
 
-```bash
-cargo test
-```
+## 💰 Pricing
 
-### Run Storage Tests Only
+QuartzDB leverages Cloudflare Workers' pay-per-request model:
 
-```bash
-cargo test -p quartz-storage
-```
+- **Workers Requests**: $0.50 per million requests
+- **Durable Objects**: $0.15 per million requests + $0.20 per GB-month storage
+- **Analytics Engine**: Included in Workers pricing
 
-### Run with Output
-
-```bash
-cargo test -- --nocapture
-```
-
-### Run Examples
-
-```bash
-# Storage demo
-cargo run -p quartz-storage --example storage_demo
-
-# HTTP API client example
-cargo run -p quartz-server --example simple_client
-```
-
-### Run HTTP API Tests
-
-```bash
-# Run all server tests
-cargo test -p quartz-server
-
-# Test specific endpoint
-cargo test -p quartz-server test_put_and_get
-```
-
-## 🔧 Building
-
-### Development Build
-
-```bash
-cargo build
-```
-
-### Release Build (Optimized)
-
-```bash
-cargo build --release
-```
-
-### Check Code Quality
-
-```bash
-# Run clippy for lints
-cargo clippy
-
-# Format code
-cargo fmt
-
-# Check formatting
-cargo fmt -- --check
-```
-
-## 📈 Benchmarking
-
-The project includes comprehensive benchmarks:
-
-```bash
-# Run all benchmarks
-cargo bench -p quartz-storage
-
-# Run specific benchmark
-cargo bench -p quartz-storage -- write_operations
-
-# Quick benchmark (faster)
-cargo bench -p quartz-storage -- --quick
-```
-
-Benchmark categories:
-
-- **Write operations**: Single writes with various cache sizes
-- **Batch writes**: Bulk write performance (10, 100, 1000 entries)
-- **Read operations**: Cache hits vs misses
-- **Delete operations**: Deletion performance
-- **WAL comparison**: WAL enabled vs disabled
-- **Concurrent operations**: Multi-threaded performance
-- **Mixed workload**: 70/30 read/write ratio
+[Calculate your costs](https://developers.cloudflare.com/workers/platform/pricing/)
 
 ## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details on our development process.
+Contributions are welcome! Please:
 
-## �️ Development
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run `cargo test` and `wrangler build`
+5. Submit a pull request
 
-### Setup Development Environment
+## 📄 License
 
-```bash
-# Clone and setup
-git clone https://github.com/ip888/QuartzDB.git
-cd QuartzDB
-./scripts/setup-dev.sh  # Install git hooks and check dependencies
-```
+MIT License - see [LICENSE](LICENSE) for details
 
-### Pre-Push Validation
+## 🔗 Links
 
-Before pushing code, run comprehensive checks:
+- **Documentation**: [quartz-faas/README.md](quartz-faas/README.md)
+- **Deployment Status**: [DEPLOYMENT_STATUS.md](DEPLOYMENT_STATUS.md)
+- **Roadmap**: [PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md)
+- **Cloudflare Workers**: https://workers.cloudflare.com/
+- **Durable Objects**: https://developers.cloudflare.com/durable-objects/
 
-```bash
-./scripts/pre-push-check.sh
-```
+## 🚀 Next Steps
 
-This script validates:
-
-- ✅ Code formatting (`cargo fmt`)
-- ✅ Lints (`cargo clippy`)
-- ✅ Build (debug + release)
-- ✅ All tests
-- ✅ Documentation
-- ✅ Deployment files
-- ✅ Security checks
-- ✅ CI simulation
-
-The pre-push hook runs automatically when you push.
-
-## �📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🔗 Resources
-
-- [Vector Search Explained](docs/VECTOR_SEARCH_EXPLAINED.md) - AI/ML integration guide
-- [Rust Book](https://doc.rust-lang.org/book/) - Learn Rust
-- [RocksDB](https://rocksdb.org/) - Storage backend
-
-## 🌟 Why QuartzDB?
-
-### vs. Traditional Databases
-
-- **Edge-First**: Optimized for low latency at the edge
-- **AI-Ready**: Native vector search for embeddings
-- **Modern**: Built with Rust for safety and performance
-
-### vs. Cloud Databases
-
-- **Local-First**: No network latency for edge workloads
-- **Cost-Effective**: Reduce cloud data transfer costs
-- **Privacy**: Keep sensitive data at the edge
-
-### vs. Other Vector DBs
-
-- **Integrated**: Full database + vector search
-- **Edge Support**: Run anywhere, not just cloud
-- **Open Source**: MIT licensed, full control
+1. **[Read the deployment guide](DEPLOYMENT_STATUS.md)** - Learn about production deployment
+2. **[Explore the API](quartz-faas/README.md)** - Complete API documentation
+3. **[Deploy your own](https://workers.cloudflare.com/)** - Get started with Cloudflare Workers
+4. **[Check the roadmap](PRODUCTION_ROADMAP.md)** - See what's coming next
 
 ---
 
-**Built with ❤️ and Rust 🦀**
+Built with ❤️ using Rust and Cloudflare Workers

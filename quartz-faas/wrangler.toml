@@ -3,6 +3,11 @@ main = "build/index.js"
 compatibility_date = "2024-01-01"
 workers_dev = true
 
+# Custom domain
+routes = [
+  { pattern = "api.quartzdb.io", custom_domain = true }
+]
+
 [build]
 command = "cargo install -q worker-build && worker-build --release"
 
@@ -19,12 +24,11 @@ script_name = "quartz-faas"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["StorageObject", "VectorIndexObject"]
+new_sqlite_classes = ["StorageObject", "VectorIndexObject"]
 
-# Analytics Engine Configuration
-# Provides structured event logging and metrics
-[[analytics_engine_datasets]]
-binding = "ANALYTICS"
+# Analytics Engine Configuration (disabled - requires manual enablement in dashboard)
+# [[analytics_engine_datasets]]
+# binding = "ANALYTICS"
 
 [env.production]
 name = "quartz-faas-prod"

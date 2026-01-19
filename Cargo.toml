@@ -1,13 +1,6 @@
 [workspace]
 resolver = "3"
 members = [
-    "quartz-core",
-    "quartz-storage",
-    "quartz-network",
-    "quartz-edge",
-    "quartz-client",
-    "quartz-server",
-    "quartz-vector",
     "quartz-faas",
 ]
 
@@ -30,6 +23,6 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tracing-appender = "0.2"
 async-trait = "0.1"
 proptest = "1.4"
-config = "0.14"
-validator = { version = "0.19", features = ["derive"] }
+config = "0.15.18"
+validator = { version = "0.20.0", features = ["derive"] }
 futures = "0.3"

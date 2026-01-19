@@ -1,0 +1,281 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ==========================================
+  # Rust Tests
+  # ==========================================
+  rust-tests:
+    name: Rust Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+      
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Run Rust tests
+        run: cargo test --all --verbose
+      
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # ==========================================
+  # Python Integration Tests
+  # ==========================================
+  python-tests:
+    name: Python Integration Tests
+    runs-on: ubuntu-latest
+    needs: rust-tests  # Wait for Rust build
+    
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('tests/requirements.txt') }}
+      
+      - name: Install Python dependencies
+        run: |
+          cd tests
+          pip install -r requirements.txt
+      
+      - name: Setup Rust (for server)
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      
+      - name: Build QuartzDB server
+        run: cargo build --release --bin quartz-server
+      
+      - name: Start QuartzDB server
+        run: |
+          ./target/release/quartz-server &
+          echo $! > server.pid
+          sleep 5  # Wait for server to start
+      
+      - name: Wait for server health
+        run: |
+          timeout 30 bash -c 'until curl -f http://localhost:8787/health; do sleep 1; done'
+      
+      - name: Run unit tests
+        env:
+          BASE_URL: http://localhost:8787
+          LOG_LEVEL: INFO
+        run: |
+          cd tests
+          pytest unit/ -v --tb=short --junitxml=../test-results/unit-${{ matrix.python-version }}.xml
+      
+      - name: Run integration tests
+        env:
+          BASE_URL: http://localhost:8787
+          LOG_LEVEL: INFO
+        run: |
+          cd tests
+          pytest integration/ -v --tb=short --junitxml=../test-results/integration-${{ matrix.python-version }}.xml
+      
+      - name: Run scenario tests
+        env:
+          BASE_URL: http://localhost:8787
+          LOG_LEVEL: INFO
+        run: |
+          cd tests
+          pytest scenarios/ -v --tb=short -m "not slow" --junitxml=../test-results/scenarios-${{ matrix.python-version }}.xml
+      
+      - name: Run performance tests
+        env:
+          BASE_URL: http://localhost:8787
+          LOG_LEVEL: WARNING
+        run: |
+          cd tests
+          pytest performance/ -v --tb=short --benchmark-only --benchmark-json=../benchmark-results.json
+      
+      - name: Stop QuartzDB server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+            rm server.pid
+          fi
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results-${{ matrix.python-version }}
+          path: test-results/
+      
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results-${{ matrix.python-version }}
+          path: benchmark-results.json
+
+  # ==========================================
+  # Code Coverage
+  # ==========================================
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    needs: rust-tests
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          cd tests
+          pip install -r requirements.txt
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      
+      - name: Build and start server
+        run: |
+          cargo build --release --bin quartz-server
+          ./target/release/quartz-server &
+          echo $! > server.pid
+          sleep 5
+      
+      - name: Run tests with coverage
+        env:
+          BASE_URL: http://localhost:8787
+        run: |
+          cd tests
+          pytest -v --cov=. --cov-report=xml --cov-report=html --cov-report=term -m "not slow"
+      
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./tests/coverage.xml
+          flags: python-tests
+          name: python-coverage
+      
+      - name: Upload coverage HTML
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: tests/htmlcov/
+
+  # ==========================================
+  # Performance Benchmarks
+  # ==========================================
+  benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    needs: rust-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          cd tests
+          pip install -r requirements.txt
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      
+      - name: Build optimized server
+        run: cargo build --release --bin quartz-server
+      
+      - name: Start server
+        run: |
+          ./target/release/quartz-server &
+          echo $! > server.pid
+          sleep 5
+      
+      - name: Run benchmarks
+        env:
+          BASE_URL: http://localhost:8787
+        run: |
+          cd tests
+          pytest performance/ --benchmark-only --benchmark-json=../benchmark-results.json --benchmark-save=baseline
+      
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi
+      
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Python Benchmark
+          tool: 'pytest'
+          output-file-path: benchmark-results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true

@@ -1,0 +1,1 @@
+This folder contains the built output assets for the worker "quartz-faas" generated at 2026-01-04T16:54:09.674Z.

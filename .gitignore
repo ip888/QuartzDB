@@ -22,9 +22,13 @@ quartz-faas/node_modules/
 docs/DAY*_*.md
 docs/internal/
 docs/marketing/
+docs/strategy/
 STRATEGIC_ANALYSIS.md
 NEXT_STEPS.md
 PRODUCT_STRATEGY.md
+
+# Internal development docs (sensitive/private)
+.internal/
 
 # IDE
 .vscode/

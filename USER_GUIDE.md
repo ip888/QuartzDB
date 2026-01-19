@@ -1,468 +1,620 @@
-# QuartzDB - Simple Explanation for Everyone
+# QuartzDB User Guide
 
-## What is QuartzDB?
-
-QuartzDB is a **smart database that lives everywhere** - it's like having a personal library assistant that remembers things and finds what you need, instantly, no matter where you are in the world.
-
-### Simple Analogy
-
-Think of QuartzDB like **Google Search meets a super-fast notebook**:
-- You can **store information** (like notes in a notebook)
-- You can **search by meaning** (like asking Google a question)
-- It's **instantly available worldwide** (like having your notebook in every city)
+**Version:** 0.1.0  
+**Last Updated:** January 2, 2026  
+**Platform:** Cloudflare Workers + Durable Objects
 
 ---
 
-## How Does It Work?
+## Table of Contents
 
-### 3-Layer Architecture (Simple View)
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  YOU (User/Application)                                  │
-│  "Find me products similar to 'red running shoes'"      │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ↓
-┌─────────────────────────────────────────────────────────┐
-│  LAYER 1: Edge API (The Speed Layer)                    │
-│  ⚡ Runs in 300+ locations worldwide                    │
-│  ⚡ Responds in under 50 milliseconds                   │
-│  "Like having a store in every neighborhood"            │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ↓
-┌─────────────────────────────────────────────────────────┐
-│  LAYER 2: Smart Search (The Brain Layer)                │
-│  🧠 Understands meaning, not just exact words           │
-│  🧠 Finds similar items (vectors)                       │
-│  "Like a librarian who knows what you really mean"      │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ↓
-┌─────────────────────────────────────────────────────────┐
-│  LAYER 3: Storage (The Memory Layer)                    │
-│  💾 Keeps all your data safe                            │
-│  💾 Never loses anything                                │
-│  "Like a warehouse that never forgets"                  │
-└─────────────────────────────────────────────────────────┘
-```
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Project Organization](#project-organization)
+4. [How It Works](#how-it-works)
+5. [API Reference](#api-reference)
+6. [Vector Search with HNSW](#vector-search-with-hnsw)
+7. [Development Guide](#development-guide)
+8. [Deployment](#deployment)
 
 ---
 
-## Real-World Examples
+## Overview
 
-### Example 1: E-commerce Product Search
+QuartzDB is a **serverless vector database** running on Cloudflare Workers edge network. It provides:
 
-**Problem:** Customer searches for "comfortable winter jacket"
+- ✅ **Key-Value Storage** - Fast, persistent storage with Durable Objects
+- ✅ **Vector Search** - HNSW (Hierarchical Navigable Small World) algorithm for similarity search
+- ✅ **Edge Computing** - Deployed to 300+ locations worldwide
+- ✅ **Zero Ops** - No servers to manage, auto-scaling
+- ✅ **Analytics** - Built-in monitoring with Analytics Engine
 
-**Traditional Database:**
-- Only finds products with exactly those words
-- Misses "warm coat", "cozy parka", "insulated outerwear"
+### Key Features
 
-**QuartzDB:**
-```
-Customer types: "comfortable winter jacket"
-         ↓
-QuartzDB understands meaning
-         ↓
-Returns:
-✓ "Cozy Winter Parka" (score: 0.95)
-✓ "Warm Insulated Coat" (score: 0.92)
-✓ "Comfortable Snow Jacket" (score: 0.89)
-```
-
-**Result:** Customer finds what they want, you make more sales!
+| Feature | Technology | Purpose |
+|---------|------------|---------|
+| **Storage** | Durable Objects + SQLite | Persistent key-value store |
+| **Vector Search** | HNSW Algorithm | O(log n) nearest neighbor search |
+| **Runtime** | WASM on V8 | Fast, secure, portable |
+| **Edge Network** | Cloudflare Workers | Low latency globally |
+| **Analytics** | Analytics Engine | Real-time metrics |
 
 ---
 
-### Example 2: Content Recommendation
+## Architecture
 
-**Scenario:** Netflix-like video platform
+### High-Level Architecture
 
-**User watches:** "Cooking with Italian Grandmas"
-
-**QuartzDB finds similar content:**
 ```
-🎬 "Traditional Pasta Making" (very similar)
-🎬 "Mediterranean Home Cooking" (quite similar)
-🎬 "Family Recipes from Tuscany" (similar)
+┌─────────────────────────────────────────────────────────────┐
+│                     Cloudflare Edge Network                  │
+│                      (300+ Locations)                        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      QuartzDB Worker                         │
+│                      (WASM Runtime)                          │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  Router (worker-rs)                                  │   │
+│  │  - /health, /api/*, /vector/*                        │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+           │                              │
+           ▼                              ▼
+┌─────────────────────┐      ┌──────────────────────────┐
+│  StorageObject      │      │  VectorIndexObject       │
+│  (Durable Object)   │      │  (Durable Object)        │
+│  ┌────────────────┐ │      │  ┌──────────────────┐   │
+│  │ HashMap Cache  │ │      │  │ HNSW Index       │   │
+│  │ + SQLite       │ │      │  │ Multi-layer      │   │
+│  └────────────────┘ │      │  │ Graph            │   │
+└─────────────────────┘      │  └──────────────────┘   │
+                             └──────────────────────────┘
+                                         │
+                                         ▼
+                             ┌──────────────────────────┐
+                             │   Analytics Engine       │
+                             │   (Metrics Storage)      │
+                             └──────────────────────────┘
 ```
 
-**How?** QuartzDB understands the *meaning* and *vibe* of content, not just keywords.
+### Component Breakdown
+
+#### 1. **Worker (Main Entry Point)**
+- **Location:** `quartz-faas/src/lib.rs`
+- **Responsibility:** HTTP routing, request handling, health checks
+- **Technology:** Rust + worker-rs + WASM
+- **Execution:** Runs on every incoming request
+
+#### 2. **Durable Objects (State Management)**
+
+**StorageObject** - Key-Value Store
+- **Location:** `quartz-faas/src/durable.rs`
+- **Persistence:** SQLite backend (automatic)
+- **Cache:** In-memory HashMap for fast reads
+- **Operations:** PUT, GET, DELETE, LIST
+
+**VectorIndexObject** - Vector Search Engine
+- **Location:** `quartz-faas/src/durable.rs`
+- **Algorithm:** HNSW (Hierarchical Navigable Small World)
+- **Persistence:** Serialized HNSW graph to SQLite
+- **Operations:** INSERT, SEARCH, STATS, CONFIG
+
+#### 3. **HNSW Vector Search**
+- **Location:** `quartz-faas/src/vector/hnsw.rs`
+- **Algorithm:** Multi-layer proximity graph
+- **Complexity:** O(log n) search, O(log n) insert
+- **WASM-Compatible:** Uses `js_sys` for random numbers
+
+#### 4. **Analytics Engine**
+- **Location:** `quartz-faas/src/monitoring.rs`
+- **Metrics:** Request latency, success/failure rates
+- **Storage:** Cloudflare Analytics Engine
+- **Retention:** Real-time + historical data
 
 ---
 
-### Example 3: Customer Support Chatbot
+## Project Organization
 
-**Problem:** Customer asks: "My order hasn't arrived"
+### Directory Structure
 
-**QuartzDB searches knowledge base:**
 ```
-Question: "My order hasn't arrived"
-         ↓
-Finds relevant articles:
-✓ "Tracking Your Delivery" (highly relevant)
-✓ "Common Shipping Delays" (relevant)
-✓ "What to Do If Package is Late" (relevant)
+QuartzDB/
+├── quartz-faas/              # Main application (WASM-based)
+│   ├── src/
+│   │   ├── lib.rs            # Worker entry point + router
+│   │   ├── api.rs            # Request/response types
+│   │   ├── error.rs          # Error handling
+│   │   ├── durable.rs        # Durable Objects (Storage + Vector)
+│   │   ├── monitoring.rs     # Analytics Engine integration
+│   │   └── vector/           # Vector search module
+│   │       ├── mod.rs        # Module exports
+│   │       └── hnsw.rs       # HNSW algorithm implementation
+│   │
+│   ├── wrangler.toml         # Cloudflare Workers configuration
+│   └── Cargo.toml            # Rust dependencies
+│
+├── docs/
+│   └── strategy/             # Strategic planning documents
+│       ├── PRODUCTION_ROADMAP.md
+│       ├── PASSIVE_INCOME_STRATEGY.md
+│       ├── RESTART_PLAN.md
+│       └── WEEK_1_ACTION_PLAN.md
+│
+├── Cargo.toml                # Workspace configuration
+└── README.md                 # Project overview
 ```
 
-**Traditional Database** would only find articles with exact words "hasn't arrived"
-**QuartzDB** understands they're asking about delivery problems
+### Module Responsibilities
+
+| Module | File | Responsibility |
+|--------|------|----------------|
+| **Router** | `lib.rs` | HTTP routing, middleware, health checks |
+| **API** | `api.rs` | Request/response data structures |
+| **Error** | `error.rs` | Error types and conversions |
+| **Storage** | `durable.rs` | Key-value store (StorageObject) |
+| **Vector** | `durable.rs` | Vector index (VectorIndexObject) |
+| **HNSW** | `vector/hnsw.rs` | HNSW algorithm implementation |
+| **Monitoring** | `monitoring.rs` | Metrics collection and reporting |
 
 ---
 
-## Technical Overview (Simplified)
+## How It Works
 
-### The Magic Behind It: Vector Search
+### Request Flow
 
-**What's a Vector?**
-Think of it as a "fingerprint" for anything:
-- A product description = unique pattern of numbers
-- An image = unique pattern of numbers
-- A customer question = unique pattern of numbers
-
-**How it works:**
-
+#### 1. **Client Request**
 ```
-Text: "Red running shoes"
-         ↓
-Converted to numbers: [0.2, 0.8, 0.1, 0.5, ...]
-         ↓
-Compared to other products:
-- "Crimson sneakers" [0.19, 0.82, 0.09, 0.51] ← Very close!
-- "Blue dress shoes" [0.7, 0.1, 0.9, 0.2] ← Not close
+Client → Cloudflare Edge → QuartzDB Worker
 ```
 
-Close numbers = similar meaning!
-
----
-
-## When Should You Use QuartzDB?
-
-### ✅ Perfect For:
-
-1. **Semantic Search**
-   - "Find products similar to X"
-   - "Search by image"
-   - "Recommendation engines"
-
-2. **Fast Global Access**
-   - Mobile apps (Instagram-like)
-   - Global websites (Airbnb-like)
-   - Real-time applications (trading, gaming)
-
-3. **AI-Powered Features**
-   - Chatbots that understand context
-   - Smart content discovery
-   - Personalized recommendations
-
-### ❌ Not Ideal For:
-
-1. **Complex Reports** - Use traditional databases (PostgreSQL)
-2. **Heavy Analytics** - Use data warehouses (Snowflake)
-3. **Simple CRUD apps** - Traditional databases work fine
-
----
-
-## Architecture Deep Dive (Still Simple!)
-
-### The Journey of a Request
-
-```
-Step 1: User in Tokyo opens your app
-        ↓
-Step 2: Request hits nearest edge server (Tokyo)
-        ⏱️ Latency: 5ms (super fast!)
-        ↓
-Step 3: Edge server checks local cache
-        Found it? → Return immediately!
-        Not found? → Go to Step 4
-        ↓
-Step 4: Query the smart search engine
-        🧠 Converts query to numbers
-        🧠 Finds similar items
-        🧠 Ranks by relevance
-        ↓
-Step 5: Fetch actual data from storage
-        💾 Retrieves full details
-        💾 Returns to edge server
-        ↓
-Step 6: Edge server caches result
-        📦 Next request will be instant!
-        ↓
-Step 7: Return to user in Tokyo
-        ⏱️ Total time: 30-50ms
+#### 2. **Router Processing**
+```rust
+// Worker receives request
+Router::new()
+    .post_async("/api/put", handler)
+    .get_async("/api/get/:key", handler)
+    .post_async("/vector/insert", handler)
+    .post_async("/vector/search", handler)
 ```
 
-### Why This is Fast
-
-**Traditional Setup:**
+#### 3. **Durable Object Interaction**
 ```
-User in Tokyo → Server in USA → Database in USA
-Total: 200-500ms (slow!)
+Worker → Get Durable Object Stub → Forward Request → Process → Return Response
 ```
 
-**QuartzDB Setup:**
-```
-User in Tokyo → Edge in Tokyo → Cached locally
-Total: 10-50ms (blazing fast!)
-```
-
----
-
-## Use Case Gallery
-
-### 1. E-Commerce Platform
-```
-Before QuartzDB:
-❌ Customer searches "laptop for gaming"
-❌ Only finds exact keyword matches
-❌ Misses relevant products
-❌ Lost sales
-
-With QuartzDB:
-✅ Understands "gaming laptop" = high performance
-✅ Shows: gaming notebooks, high-end laptops, gaming PCs
-✅ Better discovery = more sales
-✅ 30% increase in conversion rate
+#### 4. **Analytics Tracking**
+```rust
+// Track metrics for every request
+RequestMetrics::new(method, path)
+    .with_duration(elapsed_ms)
+    .with_status(status_code)
+    .send_to_analytics(env)
 ```
 
-### 2. Job Matching Platform
-```
-Before QuartzDB:
-❌ Job seeker: "Python developer"
-❌ Misses jobs titled "Software Engineer" even if Python is required
-❌ Manual filtering needed
+### Data Flow Examples
 
-With QuartzDB:
-✅ Understands: Python developer ≈ Software Engineer (Python)
-✅ Automatically shows relevant jobs
-✅ Better matches = happier users
-✅ 40% increase in successful hires
-```
+#### Key-Value Storage
 
-### 3. Social Media App
 ```
-Before QuartzDB:
-❌ Show posts chronologically
-❌ User misses interesting content
-❌ Low engagement
-
-With QuartzDB:
-✅ Understands user interests from past behavior
-✅ Shows similar/relevant content
-✅ Like TikTok's "For You" page
-✅ 3x higher engagement
+1. Client sends: POST /api/put {"key": "user:123", "value": "John Doe"}
+2. Worker routes to StorageObject
+3. StorageObject:
+   - Updates in-memory cache
+   - Writes to Durable Storage (SQLite)
+4. Response: {"success": true, "key": "user:123"}
 ```
 
-### 4. Legal Document Search
-```
-Before QuartzDB:
-❌ Lawyer searches for "contract disputes"
-❌ Only finds docs with exact phrase
-❌ Misses "agreement conflicts", "contract disagreements"
-❌ Hours wasted
+#### Vector Search
 
-With QuartzDB:
-✅ Finds all semantically similar cases
-✅ Saves 5-10 hours per week
-✅ More billable hours
-✅ $50,000+ annual value per lawyer
+```
+1. Client sends: POST /vector/search {"query": [0.1, 0.2, ...], "k": 10}
+2. Worker routes to VectorIndexObject
+3. VectorIndexObject:
+   - Loads HNSW index from cache/storage
+   - Runs HNSW search algorithm:
+     a. Start at entry point (highest layer)
+     b. Greedily navigate to nearest neighbors per layer
+     c. Descend to layer 0
+     d. Return k nearest neighbors
+4. Response: {"results": [{id, score, metadata}...]}
+```
+
+### HNSW Algorithm Flow
+
+```
+Insert Vector:
+1. Generate random level (exponential distribution)
+2. Create node with connections at each layer
+3. Find entry point (top layer node)
+4. For each layer (top to bottom):
+   - Search for nearest neighbors
+   - Connect to M nearest nodes
+   - Add bidirectional edges
+   - Prune overconnected neighbors
+5. Update entry point if new node is highest
+
+Search Query:
+1. Start at entry point (top layer)
+2. For each layer (top to 1):
+   - Greedy search for single nearest neighbor
+   - Move to that neighbor
+3. At layer 0:
+   - Search for k nearest neighbors
+   - Use ef_search parameter for quality
+4. Return top k results by distance
 ```
 
 ---
 
-## Pricing & Business Model
+## API Reference
 
-### Free Tier (Perfect for Testing)
-- 100,000 API calls per day
-- Global edge deployment
-- Basic vector search
-- Community support
+### Health Check
 
-**Good for:**
-- Startups testing ideas
-- Side projects
-- MVP development
+**GET /health**
 
-### Pro Tier ($99/month)
-- 10 million API calls per month
-- Advanced search features
-- Priority support
-- Analytics dashboard
-
-**Good for:**
-- Growing startups
-- Small businesses
-- Production apps
-
-### Enterprise (Custom)
-- Unlimited API calls
-- Dedicated infrastructure
-- SLA guarantees
-- Custom integrations
-- 24/7 support
-
-**Good for:**
-- Large companies
-- Mission-critical apps
-- High-traffic platforms
-
----
-
-## Competitive Advantages
-
-### vs Traditional Databases (PostgreSQL, MySQL)
-```
-Traditional:     QuartzDB:
-❌ Exact match    ✅ Semantic search
-❌ Single region  ✅ Global edge
-⏱️ 100-500ms     ⏱️ 10-50ms
-💰 Complex setup  💰 Plug & play
+```bash
+curl https://your-worker.workers.dev/health
 ```
 
-### vs Pinecone/Weaviate (Vector DBs)
-```
-Competitors:     QuartzDB:
-💰 $70/month+    💰 Free tier available
-🌍 Limited edge  🌍 300+ locations
-🔧 Complex       🔧 Simple API
-📊 Vector only   📊 Vector + Key-Value
-```
-
-### vs Building Your Own
-```
-DIY:                  QuartzDB:
-⏰ 6-12 months       ⏰ 1 day integration
-💰 $200K+ dev cost   💰 $0-99/month
-🔧 Maintenance hell  🔧 We handle it
-😰 Scale problems    😊 Auto-scales
+Response:
+```json
+{
+  "status": "healthy",
+  "service": "quartz-faas",
+  "version": "0.1.0",
+  "uptime_seconds": 123456,
+  "checks": {
+    "storage": "ok",
+    "vector_index": "ok"
+  }
+}
 ```
 
----
+### Key-Value Storage
 
-## Success Metrics (Projected)
+#### Store Value
 
-### For E-Commerce:
-- **30-50%** increase in product discovery
-- **20-30%** boost in conversion rate
-- **15-25%** higher average order value
+**POST /api/put**
 
-### For Content Platforms:
-- **2-3x** increase in user engagement
-- **40-60%** longer session times
-- **25-35%** better retention
-
-### For SaaS Applications:
-- **50-70%** faster search results
-- **30-40%** reduction in support tickets
-- **20-30%** improvement in user satisfaction
-
----
-
-## Getting Started (3 Simple Steps)
-
-### Step 1: Sign Up (2 minutes)
-```
-1. Visit quartzdb.com
-2. Create free account
-3. Get your API key
+```bash
+curl -X POST https://your-worker.workers.dev/api/put \
+  -H "Content-Type: application/json" \
+  -d '{"key": "user:123", "value": "John Doe"}'
 ```
 
-### Step 2: Install SDK (1 minute)
-```javascript
-npm install @quartzdb/client
-// or
-pip install quartzdb
+Response:
+```json
+{
+  "success": true,
+  "key": "user:123",
+  "message": "Value stored successfully"
+}
 ```
 
-### Step 3: Start Building (5 minutes)
-```javascript
-import QuartzDB from '@quartzdb/client';
+#### Retrieve Value
 
-const db = new QuartzDB('your-api-key');
+**GET /api/get/:key**
 
-// Insert data
-await db.put('product-123', {
-  name: 'Red Running Shoes',
-  price: 89.99
-});
-
-// Semantic search
-const results = await db.search('athletic footwear', { k: 10 });
-console.log(results); // Finds similar products!
+```bash
+curl https://your-worker.workers.dev/api/get/user:123
 ```
 
----
-
-## FAQ for Non-Technical Users
-
-**Q: Do I need to be a programmer?**
-A: No! We provide no-code integrations for Shopify, WordPress, etc.
-
-**Q: How is my data protected?**
-A: Bank-level encryption, SOC 2 compliant, GDPR compliant.
-
-**Q: What if I outgrow the free tier?**
-A: Easy upgrade to Pro, no migration needed. Your data stays.
-
-**Q: Can I try before buying?**
-A: Yes! Free tier is forever. Upgrade when you're ready.
-
-**Q: How long does setup take?**
-A: For developers: 30 minutes. For no-code: 5 minutes.
-
-**Q: What if I need help?**
-A: Free tier: Community forum. Paid: Email + Chat support.
-
----
-
-## Visual Summary
-
+Response:
+```json
+{
+  "success": true,
+  "key": "user:123",
+  "value": "John Doe",
+  "source": "cache"
+}
 ```
-┌────────────────────────────────────────────────┐
-│         QuartzDB = 3 Superpowers               │
-├────────────────────────────────────────────────┤
-│                                                 │
-│  ⚡ SPEED                                       │
-│  Responds in under 50ms globally               │
-│  Like having your data everywhere              │
-│                                                 │
-│  🧠 SMART                                       │
-│  Understands meaning, not just keywords        │
-│  Like having an AI librarian                   │
-│                                                 │
-│  📈 SCALABLE                                    │
-│  Handles 1 user or 1 billion users             │
-│  Like elastic infrastructure                   │
-│                                                 │
-└────────────────────────────────────────────────┘
+
+#### Delete Value
+
+**DELETE /api/delete/:key**
+
+```bash
+curl -X DELETE https://your-worker.workers.dev/api/delete/user:123
+```
+
+### Vector Search
+
+#### Insert Vector
+
+**POST /vector/insert**
+
+```bash
+curl -X POST https://your-worker.workers.dev/vector/insert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": 123,
+    "vector": [0.1, 0.2, 0.3, ...],
+    "metadata": {"title": "Document 1", "category": "tech"}
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "id": 123,
+  "message": "Vector inserted successfully"
+}
+```
+
+#### Search Vectors
+
+**POST /vector/search**
+
+```bash
+curl -X POST https://your-worker.workers.dev/vector/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": [0.1, 0.2, 0.3, ...],
+    "k": 10
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "algorithm": "HNSW",
+  "results": [
+    {
+      "id": 123,
+      "distance": 0.05,
+      "score": 0.95,
+      "metadata": {"title": "Document 1"}
+    }
+  ]
+}
+```
+
+#### Get Statistics
+
+**GET /vector/stats**
+
+```bash
+curl https://your-worker.workers.dev/vector/stats
+```
+
+Response:
+```json
+{
+  "algorithm": "HNSW",
+  "num_vectors": 10000,
+  "num_nodes": 10000,
+  "dimension": 384,
+  "entry_point_level": 4,
+  "connections_per_layer": [32000, 8000, 2000, 500, 125]
+}
+```
+
+#### Configure HNSW
+
+**POST /vector/config**
+
+```bash
+curl -X POST https://your-worker.workers.dev/vector/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dimension": 384,
+    "metric": "cosine",
+    "max_connections": 16,
+    "ef_construction": 200,
+    "ef_search": 100
+  }'
 ```
 
 ---
 
-## What Makes QuartzDB Special?
+## Vector Search with HNSW
 
-### The "Aha!" Moments:
+### What is HNSW?
 
-1. **"It just works"** - No complex setup, no DevOps needed
-2. **"It's so fast!"** - Users notice the speed immediately
-3. **"It understands me"** - Semantic search feels magical
-4. **"It scales effortlessly"** - From 10 to 10M users, same code
+**Hierarchical Navigable Small World** is a graph-based algorithm for approximate nearest neighbor search.
 
-### The Business Impact:
+**Key Characteristics:**
+- **Multi-layer Graph:** Higher layers for coarse navigation, layer 0 for fine-grained search
+- **Greedy Search:** Navigate to nearest neighbor at each step
+- **Complexity:** O(log n) for both insert and search
+- **Accuracy:** Highly accurate with tunable parameters
 
-- **Faster = More Revenue**: Every 100ms of latency = 1% loss in sales
-- **Smarter = Better UX**: Relevant results = happy customers
-- **Global = Bigger Market**: Serve customers worldwide instantly
+### Configuration Parameters
+
+| Parameter | Description | Default | Tuning |
+|-----------|-------------|---------|--------|
+| `M` | Connections per node (layers 1+) | 16 | Higher = better recall, slower |
+| `M₀` | Connections per node (layer 0) | 32 | Usually 2×M |
+| `ef_construction` | Neighbors explored during insert | 200 | Higher = better graph, slower insert |
+| `ef_search` | Neighbors explored during search | 100 | Higher = better recall, slower search |
+
+### Performance Tuning
+
+**For Speed:**
+```json
+{
+  "max_connections": 8,
+  "ef_construction": 100,
+  "ef_search": 50
+}
+```
+
+**For Accuracy:**
+```json
+{
+  "max_connections": 32,
+  "ef_construction": 400,
+  "ef_search": 200
+}
+```
+
+**Balanced (Default):**
+```json
+{
+  "max_connections": 16,
+  "ef_construction": 200,
+  "ef_search": 100
+}
+```
+
+### Distance Metrics
+
+- **Cosine Similarity** - Best for normalized embeddings (default)
+- **Euclidean (L2)** - Geometric distance
+- **Dot Product** - Raw similarity score
 
 ---
 
-## Ready to Build?
+## Development Guide
 
-**Start Free:** https://quartzdb.com/signup
-**Documentation:** https://docs.quartzdb.com
-**Examples:** https://github.com/quartzdb/examples
+### Prerequisites
 
-Questions? Email: hello@quartzdb.com
+- Rust 1.70+ (`rustup install stable`)
+- Node.js 18+ (`node --version`)
+- Wrangler CLI (`npm install -g wrangler`)
+
+### Local Development
+
+```bash
+# Clone repository
+git clone <repo-url>
+cd QuartzDB/quartz-faas
+
+# Install dependencies
+cargo build
+
+# Run locally with Miniflare
+wrangler dev
+
+# Test endpoints
+curl http://localhost:8787/health
+```
+
+### Running Tests
+
+```bash
+# Unit tests
+cargo test
+
+# Integration tests
+wrangler dev &
+python examples/simple_vector_demo.py
+```
+
+### Building for Production
+
+```bash
+# Optimize build
+wrangler build
+
+# Check bundle size
+ls -lh build/
+# Expected: ~700KB total, ~270KB gzipped
+```
+
+---
+
+## Deployment
+
+### Deploy to Cloudflare Workers
+
+```bash
+# Login to Cloudflare
+wrangler login
+
+# Deploy to production
+cd quartz-faas
+wrangler deploy
+
+# Output:
+# ✨ Published quartz-faas
+# https://quartz-faas.<your-subdomain>.workers.dev
+```
+
+### Configure Durable Objects
+
+Ensure `wrangler.toml` has:
+
+```toml
+[[durable_objects.bindings]]
+name = "STORAGE"
+class_name = "StorageObject"
+script_name = "quartz-faas"
+
+[[durable_objects.bindings]]
+name = "VECTOR_INDEX"
+class_name = "VectorIndexObject"
+script_name = "quartz-faas"
+```
+
+### Monitor Performance
+
+View analytics at:
+```
+https://dash.cloudflare.com → Workers → quartz-faas → Analytics
+```
+
+---
+
+## Advanced Topics
+
+### Scaling Considerations
+
+- **Durable Objects:** Each DO instance handles up to ~1000 RPS
+- **Multiple Instances:** Use different DO names for sharding
+- **Vector Index Size:** ~100MB per 100K vectors (384-dim)
+- **Cold Start:** First request ~50-100ms, subsequent <1ms
+
+### Backup and Recovery
+
+Durable Objects automatically persist to disk:
+- **SQLite Storage:** Replicated to 3+ regions
+- **No Manual Backups:** Handled by Cloudflare
+- **Export Data:** Use LIST endpoint for manual export
+
+### Security
+
+- **Authentication:** Add Cloudflare Access or custom middleware
+- **Rate Limiting:** Use Cloudflare Rate Limiting rules
+- **CORS:** Configure in worker router if needed
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**"CPU time limit exceeded"**
+- HNSW search is CPU-intensive
+- Solution: Lower `ef_search` or upgrade to Workers Paid plan
+
+**"Durable Object not found"**
+- Check `wrangler.toml` bindings
+- Ensure DO migrations are published
+
+**"Vector dimension mismatch"**
+- All vectors must have same dimension
+- Reconfigure index with correct dimension
+
+### Debug Mode
+
+```bash
+# Run with verbose logging
+RUST_LOG=debug wrangler dev
+```
+
+---
+
+## Support
+
+- **Documentation:** See `docs/` folder
+- **Issues:** GitHub Issues
+- **Community:** Cloudflare Workers Discord
+
+---
+
+**Happy Building! 🚀**
