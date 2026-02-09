@@ -32,6 +32,9 @@ pub const MAX_SEARCH_K: usize = 1000;
 /// Maximum key length for KV
 pub const MAX_KEY_LENGTH: usize = 512;
 
+/// Maximum request body size (1MB)
+pub const MAX_REQUEST_BODY_SIZE: usize = 1024 * 1024;
+
 /// Validate vector ID
 ///
 /// Rules:

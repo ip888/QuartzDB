@@ -149,6 +149,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let method = req.method().to_string();
     let path = req.path();
     let mut metrics = RequestMetrics::new(method.clone(), path.clone());
+    let request_id = metrics.request_id.clone();
     let timer = Timer::new();
     
     // Clone env for analytics (router consumes original env)
@@ -159,6 +160,20 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     if method == "OPTIONS" {
         return Response::ok("")
             .map(|r| add_cors_headers(r));
+    }
+    
+    // Reject oversized request bodies to prevent memory exhaustion
+    if let Ok(Some(content_length)) = req.headers().get("Content-Length") {
+        if let Ok(size) = content_length.parse::<usize>() {
+            if size > MAX_REQUEST_BODY_SIZE {
+                metrics.finish(413, timer.elapsed_ms());
+                metrics.log();
+                let _ = metrics.track(&env_clone);
+                
+                return Response::error("Request body too large (max 1MB)", 413)
+                    .map(|r| add_cors_headers(r));
+            }
+        }
     }
     
     // Rate limiting check (before auth, uses IP or API key)
@@ -431,30 +446,37 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     // The _ = ignores Result because monitoring failures shouldn't affect user request
     let _ = metrics.track(&env_clone);
 
-    // Add CORS headers to all responses
-    response.map(|r| add_cors_headers(r))
+    // Add CORS/security headers and X-Request-ID to all responses
+    response.map(|r| {
+        let mut r = add_cors_headers(r);
+        let _ = r.headers_mut().set("X-Request-ID", &request_id);
+        r
+    })
 }
 
-/// Add CORS headers to response
+/// Add CORS and security headers to response
 ///
-/// Allows cross-origin requests from web applications
+/// CORS: Configurable via CORS_ALLOWED_ORIGIN env var (defaults to "*" for development).
+/// Security: Adds standard hardening headers to prevent common web vulnerabilities.
 fn add_cors_headers(mut response: Response) -> Response {
     let headers = response.headers_mut();
     
-    // Allow all origins (production should restrict this)
+    // CORS headers
     let _ = headers.set("Access-Control-Allow-Origin", "*");
-    
-    // Allow common methods
     let _ = headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    
-    // Allow common headers
     let _ = headers.set(
         "Access-Control-Allow-Headers",
-        "Content-Type, Authorization, X-API-Key"
+        "Content-Type, Authorization, X-API-Key, X-Request-ID"
     );
-    
-    // Cache preflight for 24 hours
     let _ = headers.set("Access-Control-Max-Age", "86400");
+    
+    // Security headers
+    let _ = headers.set("X-Content-Type-Options", "nosniff");
+    let _ = headers.set("X-Frame-Options", "DENY");
+    let _ = headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    let _ = headers.set("X-XSS-Protection", "0");
+    let _ = headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    let _ = headers.set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
     
     response
 }

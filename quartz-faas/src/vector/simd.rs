@@ -154,7 +154,11 @@ pub fn cosine_distance_simd(a: &[f32], b: &[f32]) -> f32 {
     }
 
     // Cosine similarity = dot / (||a|| * ||b||)
-    let similarity = dot_sum / (norm_a_sum.sqrt() * norm_b_sum.sqrt());
+    let denominator = norm_a_sum.sqrt() * norm_b_sum.sqrt();
+    if denominator == 0.0 {
+        return 1.0; // Maximum distance for zero-norm vectors
+    }
+    let similarity = dot_sum / denominator;
 
     // Convert to distance (lower = more similar)
     1.0 - similarity
@@ -227,7 +231,11 @@ pub fn cosine_distance_simd(a: &[f32], b: &[f32]) -> f32 {
     let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
 
-    1.0 - (dot / (norm_a * norm_b))
+    let denominator = norm_a * norm_b;
+    if denominator == 0.0 {
+        return 1.0; // Maximum distance for zero-norm vectors
+    }
+    1.0 - (dot / denominator)
 }
 
 /// Dot product distance (scalar fallback)
@@ -263,6 +271,17 @@ mod tests {
 
         let distance = cosine_distance_simd(&a, &b);
         assert!(distance < 0.0001); // Should be nearly 0 (identical)
+    }
+
+    #[test]
+    fn test_cosine_distance_zero_norm() {
+        let a = vec![0.0, 0.0, 0.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0, 0.0];
+
+        let distance = cosine_distance_simd(&a, &b);
+        // Should return 1.0 (max distance) instead of NaN for zero-norm vectors
+        assert!(!distance.is_nan(), "Distance should not be NaN for zero-norm vectors");
+        assert!((distance - 1.0).abs() < 0.0001);
     }
 
     #[test]
