@@ -44,9 +44,7 @@ pub struct ShardRouter {
 impl ShardRouter {
     /// Create router with specified number of shards
     ///
-    /// # Panics
-    ///
-    /// Returns the router with at least 1 shard. If `shard_count` is 0, defaults to 1.
+    /// If `shard_count` is 0, defaults to 1 to avoid division by zero.
     pub fn new(shard_count: usize) -> Self {
         Self { shard_count: shard_count.max(1) }
     }

@@ -201,11 +201,11 @@ impl RequestMetrics {
 /// Generate a unique request ID for tracing and debugging.
 ///
 /// Uses timestamp + random suffix for uniqueness without external crate dependency.
-/// Format: "req-{timestamp_hex}-{random_hex}" (e.g., "req-18a3f2b1c-a7e3")
+/// Format: "req-{timestamp_hex}-{random_hex}" (e.g., "req-18a3f2b1c-a7e3b2d1")
 pub fn generate_request_id() -> String {
     let timestamp = js_sys::Date::now() as u64;
-    let random = (js_sys::Math::random() * 65535.0) as u16;
-    format!("req-{:x}-{:04x}", timestamp, random)
+    let random = (js_sys::Math::random() * u32::MAX as f64) as u32;
+    format!("req-{:x}-{:08x}", timestamp, random)
 }
 
 /// Timer for measuring operation duration using JS Date

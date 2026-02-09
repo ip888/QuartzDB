@@ -474,7 +474,7 @@ fn add_cors_headers(mut response: Response) -> Response {
     let _ = headers.set("X-Content-Type-Options", "nosniff");
     let _ = headers.set("X-Frame-Options", "DENY");
     let _ = headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-    let _ = headers.set("X-XSS-Protection", "0");
+    let _ = headers.set("X-XSS-Protection", "1; mode=block");
     let _ = headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
     let _ = headers.set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
     
