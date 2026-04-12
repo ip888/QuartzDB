@@ -283,6 +283,7 @@ impl StorageObject {
 //
 
 use crate::vector::{HnswIndex, DistanceMetric, HnswConfig};
+use crate::validation::{MAX_SEARCH_K, MAX_ID_LENGTH, MAX_VECTOR_DIMENSIONS, MAX_METADATA_SIZE};
 
 #[durable_object]
 pub struct VectorIndexObject {
@@ -512,8 +513,26 @@ impl VectorIndexObject {
             return Response::error("ID cannot be empty", 400);
         }
 
+        if body.id.len() > MAX_ID_LENGTH {
+            return Response::error(
+                &format!("ID too long (max {} chars)", MAX_ID_LENGTH), 400);
+        }
+
         if body.vector.is_empty() {
             return Response::error("Vector cannot be empty", 400);
+        }
+
+        if body.vector.len() > MAX_VECTOR_DIMENSIONS {
+            return Response::error(
+                &format!("Vector too large (max {} dimensions)", MAX_VECTOR_DIMENSIONS), 400);
+        }
+
+        if let Some(ref meta) = body.metadata {
+            let meta_size = serde_json::to_string(meta).unwrap_or_default().len();
+            if meta_size > MAX_METADATA_SIZE {
+                return Response::error(
+                    &format!("Metadata too large (max {} bytes)", MAX_METADATA_SIZE), 400);
+            }
         }
 
         // Insert into HNSW index
@@ -582,7 +601,7 @@ impl VectorIndexObject {
 
         let body = match req.json::<BatchInsertRequest>().await {
             Ok(b) => b,
-            Err(e) => return Response::error(&format!("Invalid JSON body: {}", e), 400),
+            Err(_) => return Response::error("Invalid JSON body", 400),
         };
 
         if body.vectors.is_empty() {
@@ -591,6 +610,31 @@ impl VectorIndexObject {
 
         if body.vectors.len() > 100 {
             return Response::error("Batch too large (max 100 vectors)", 400);
+        }
+
+        // Validate each vector in batch
+        for (i, item) in body.vectors.iter().enumerate() {
+            if item.id.is_empty() {
+                return Response::error(&format!("Vector {}: ID cannot be empty", i), 400);
+            }
+            if item.id.len() > MAX_ID_LENGTH {
+                return Response::error(
+                    &format!("Vector {}: ID too long (max {} chars)", i, MAX_ID_LENGTH), 400);
+            }
+            if item.vector.is_empty() {
+                return Response::error(&format!("Vector {}: vector cannot be empty", i), 400);
+            }
+            if item.vector.len() > MAX_VECTOR_DIMENSIONS {
+                return Response::error(
+                    &format!("Vector {}: too large (max {} dimensions)", i, MAX_VECTOR_DIMENSIONS), 400);
+            }
+            if let Some(ref meta) = item.metadata {
+                let meta_size = serde_json::to_string(meta).unwrap_or_default().len();
+                if meta_size > MAX_METADATA_SIZE {
+                    return Response::error(
+                        &format!("Vector {}: metadata too large (max {} bytes)", i, MAX_METADATA_SIZE), 400);
+                }
+            }
         }
 
         // Process batch with single mutable borrow
@@ -685,7 +729,7 @@ impl VectorIndexObject {
             return Response::error("Query vector cannot be empty", 400);
         }
 
-        let k = body.k.unwrap_or(10).min(100); // Max 100 results
+        let k = body.k.unwrap_or(10).min(MAX_SEARCH_K); // Max results per shard
 
         // Search using HNSW index
         if let Some(index) = self.index.borrow().as_ref() {
@@ -711,7 +755,8 @@ impl VectorIndexObject {
                     }))
                 }
                 Err(e) => {
-                    Response::error(&format!("Search failed: {}", e), 500)
+                    console_log!("[error] search failed: {}", e);
+                    Response::error("Search failed", 500)
                 }
             }
         } else {
@@ -888,6 +933,9 @@ impl VectorIndexObject {
         // Build config
         let mut config = HnswConfig::default();
         if let Some(m) = body.max_connections {
+            if m < 2 {
+                return Response::error("max_connections must be >= 2", 400);
+            }
             config.max_connections = m;
             config.max_connections_layer0 = m * 2;
             config.level_multiplier = 1.0 / (m as f64).ln();

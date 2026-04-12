@@ -4,18 +4,21 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Request body for KV PUT operations.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PutRequest {
     pub key: String,
     pub value: String,
 }
 
+/// Response body for KV GET operations.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetResponse {
     pub key: String,
     pub value: Option<String>,
 }
 
+/// Request body for single-vector insert (`POST /api/vector/insert`).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VectorInsertRequest {
     pub id: u64,
@@ -23,6 +26,7 @@ pub struct VectorInsertRequest {
     pub metadata: Option<serde_json::Value>,
 }
 
+/// Request body for vector search (`POST /api/vector/search`).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VectorSearchRequest {
     pub query: Vec<f32>,
@@ -30,11 +34,13 @@ pub struct VectorSearchRequest {
     pub metric: Option<String>,
 }
 
+/// Response body for vector search containing ranked results.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VectorSearchResponse {
     pub results: Vec<VectorSearchResult>,
 }
 
+/// A single search result entry with score and optional metadata.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VectorSearchResult {
     pub id: u64,
@@ -42,6 +48,7 @@ pub struct VectorSearchResult {
     pub metadata: Option<serde_json::Value>,
 }
 
+/// Generic envelope for all API JSON responses.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiResponse<T> {
     pub status: String,
@@ -50,6 +57,7 @@ pub struct ApiResponse<T> {
 }
 
 impl<T> ApiResponse<T> {
+    /// Build a success response wrapping `data`.
     pub fn success(data: T) -> Self {
         Self {
             status: "success".to_string(),
@@ -58,6 +66,7 @@ impl<T> ApiResponse<T> {
         }
     }
 
+    /// Build an error response with a human-readable message.
     pub fn error(error: String) -> Self {
         Self {
             status: "error".to_string(),

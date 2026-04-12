@@ -82,7 +82,7 @@ impl ShardRouter {
         (0..self.shard_count).collect()
     }
 
-    /// Get shard count
+    /// Total number of shards this strategy distributes vectors across.
     pub fn shard_count(&self) -> usize {
         self.shard_count
     }

@@ -2,14 +2,18 @@
 //!
 //! # Strategy
 //!
-//! 1. **Cloudflare Rate Limiting** (primary, configured in wrangler.toml)
-//!    - 100 requests/minute per IP (free tier)
-//!    - Blocks at edge before reaching worker
+//! 1. **Cloudflare Rate Limiting** (primary, configured in dashboard / wrangler.toml)
+//!    - Per-IP burst protection at the edge, before the Worker runs
+//!    - `check_cloudflare_rate_limit()` reads the `CF-RateLimit-Remaining`
+//!      header injected by the Cloudflare product
 //!
-//! 2. **Custom Token Bucket** (secondary, per-API-key)
-//!    - Stored in Durable Object state
-//!    - Refills over time
-//!    - Protects against single abusive key
+//! 2. **Per-tenant monthly usage limits** (enforced in the Worker router)
+//!    - [`crate::billing::check_usage_limits`] checks monthly query counts
+//!      against the tenant's plan quota
+//!
+//! 3. **Token Bucket** (below) — available for use inside Durable Objects
+//!    where state persists between requests.  Workers themselves are
+//!    stateless, so the in-memory bucket resets every invocation.
 //!
 //! # Implementation
 //!
@@ -53,17 +57,18 @@ pub struct TokenBucket {
 }
 
 impl TokenBucket {
+    /// Create a bucket filled to capacity with the given config.
     pub fn new(config: RateLimitConfig) -> Self {
         Self {
             tokens: config.capacity as f64,
-            last_refill: js_sys::Date::now(),
+            last_refill: crate::platform::now_ms(),
             config,
         }
     }
     
     /// Refill tokens based on elapsed time
     pub fn refill(&mut self) {
-        let now = js_sys::Date::now();
+        let now = crate::platform::now_ms();
         let elapsed_seconds = (now - self.last_refill) / 1000.0;
         
         // Add tokens based on elapsed time
@@ -86,7 +91,7 @@ impl TokenBucket {
         }
     }
     
-    /// Get remaining tokens
+    /// Remaining available tokens after an implicit refill.
     pub fn available_tokens(&mut self) -> u32 {
         self.refill();
         self.tokens.floor() as u32
@@ -103,6 +108,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    /// Create a new rate limiter with the given default configuration.
     pub fn new(config: RateLimitConfig) -> Self {
         Self {
             buckets: HashMap::new(),
@@ -133,7 +139,7 @@ impl RateLimiter {
         (allowed, remaining, retry_after)
     }
     
-    /// Get stats for monitoring
+    /// Return monitoring stats for the rate limiter.
     pub fn get_stats(&self) -> RateLimiterStats {
         RateLimiterStats {
             num_tracked_keys: self.buckets.len(),
@@ -141,7 +147,7 @@ impl RateLimiter {
         }
     }
     
-    /// Clean up old buckets (full capacity = inactive)
+    /// Remove buckets that have refilled to full capacity (i.e. inactive keys).
     pub fn cleanup_inactive(&mut self) {
         self.buckets.retain(|_, bucket| {
             bucket.refill();
@@ -150,9 +156,12 @@ impl RateLimiter {
     }
 }
 
+/// Snapshot of rate-limiter state for monitoring endpoints.
 #[derive(Debug, Serialize)]
 pub struct RateLimiterStats {
+    /// Number of distinct API keys currently tracked.
     pub num_tracked_keys: usize,
+    /// Active rate limit configuration.
     pub config: RateLimitConfig,
 }
 
@@ -179,7 +188,6 @@ mod tests {
     use super::*;
     
     #[test]
-    #[cfg(target_arch = "wasm32")]
     fn test_token_bucket_consume() {
         let mut bucket = TokenBucket::new(RateLimitConfig {
             capacity: 10,
@@ -196,7 +204,6 @@ mod tests {
     }
     
     #[test]
-    #[cfg(target_arch = "wasm32")]
     fn test_rate_limiter() {
         let mut limiter = RateLimiter::new(RateLimitConfig {
             capacity: 5,

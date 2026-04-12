@@ -44,6 +44,32 @@ export interface HealthResponse {
   };
 }
 
+export interface SignupResponse {
+  success: boolean;
+  tenant_id: string;
+  api_key: string;
+  plan: string;
+  vector_limit: number;
+  query_limit_per_month: number;
+  message: string;
+}
+
+export interface UsageResponse {
+  success: boolean;
+  tenant_id: string;
+  plan: string;
+  usage: {
+    queries: number;
+    inserts: number;
+    vectors_stored: number;
+    month: string;
+  };
+  limits: {
+    vector_limit: number;
+    query_limit_per_month: number;
+  };
+}
+
 class QuartzAPI {
   private apiKey: string = '';
 
@@ -105,10 +131,20 @@ class QuartzAPI {
   }
 
   async deleteVector(id: string): Promise<{ success: boolean; message: string }> {
-    return this.fetch('/api/vector/delete', {
+    return this.fetch(`/api/vector/delete/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-      body: JSON.stringify({ id }),
     });
+  }
+
+  async signup(tenantId: string): Promise<SignupResponse> {
+    return this.fetch<SignupResponse>('/api/tenants/signup', {
+      method: 'POST',
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+  }
+
+  async usage(): Promise<UsageResponse> {
+    return this.fetch<UsageResponse>('/api/usage');
   }
 }
 

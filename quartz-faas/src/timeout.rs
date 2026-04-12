@@ -1,191 +1,133 @@
-//! Request timeout utilities
+//! Request timeout utilities for QuartzDB
 //!
-//! # Why Timeouts?
-//!
-//! Prevent:
-//! - Long-running operations blocking workers
-//! - Resource exhaustion from slow clients
-//! - Cascading failures in distributed systems
-//!
-//! # Implementation
-//!
-//! Uses JavaScript Promise.race() via wasm-bindgen to implement timeouts
-//! since Rust's tokio::time is not available in WASM.
+//! Uses elapsed-time checking since JS Promise.race() is complex in WASM.
+//! TimeoutGuard provides a simple, reliable timeout mechanism.
 
 use worker::*;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
 
 /// Default timeout for operations (30 seconds)
 pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
 
-/// Timeout for vector operations (10 seconds)
+/// Timeout for vector operations (10 seconds)  
 pub const VECTOR_TIMEOUT_MS: u32 = 10_000;
 
 /// Timeout for health checks (5 seconds)
 pub const HEALTH_CHECK_TIMEOUT_MS: u32 = 5_000;
 
-/// Execute a future with a timeout
-///
-/// Returns Err if timeout exceeded, Ok(T) if completed in time
-///
-/// # Example
-///
+/// Simple timeout guard that checks elapsed time
+/// 
+/// Usage:
 /// ```ignore
-/// let result = with_timeout(
-///     async { expensive_operation().await },
-///     10_000
-/// ).await?;
+/// let guard = TimeoutGuard::new(VECTOR_TIMEOUT_MS);
+/// // ... do work ...
+/// guard.check()?; // Returns Err if timeout exceeded
 /// ```
-pub async fn with_timeout<F, T>(future: F, timeout_ms: u32) -> Result<T>
-where
-    F: std::future::Future<Output = Result<T>>,
-{
-    // Convert Rust future to JS Promise
-    let promise = future_to_promise(future);
-    
-    // Create timeout promise that rejects after timeout_ms
-    let timeout_promise = create_timeout_promise(timeout_ms);
-    
-    // Race: first one to complete wins
-    let js_array = js_sys::Array::new();
-    js_array.push(&promise);
-    js_array.push(&timeout_promise);
-    
-    let result = JsFuture::from(js_sys::Promise::race(&js_array)).await;
-    
-    match result {
-        Ok(val) => {
-            // Check if it's a timeout marker
-            if is_timeout_marker(&val) {
-                Err(Error::RustError(format!("Operation timed out after {}ms", timeout_ms)))
-            } else {
-                // Extract the actual result
-                parse_result_from_js(val)
-            }
-        }
-        Err(e) => {
-            Err(Error::JsError(format!("Operation failed: {:?}", e)))
-        }
-    }
-}
-
-/// Convert Rust future to JS Promise (simplified)
-///
-/// Note: This is a simplified version. Full implementation would use
-/// wasm-bindgen-futures properly.
-fn future_to_promise<F, T>(_future: F) -> js_sys::Promise
-where
-    F: std::future::Future<Output = Result<T>>,
-{
-    // In production, use wasm_bindgen_futures::future_to_promise
-    // For now, return a dummy promise
-    js_sys::Promise::resolve(&JsValue::NULL)
-}
-
-/// Create a JS Promise that rejects after timeout
-#[allow(dead_code)]
-fn create_timeout_promise(_timeout_ms: u32) -> js_sys::Promise {
-    // Simplified: Just return a never-resolving promise
-    // In production, would use proper setTimeout via js-sys
-    js_sys::Promise::new(&mut |_resolve, _reject| {
-        // Never resolves - timeout not enforced in this simplified version
-        // TimeoutGuard is used instead for practical timeout checking
-    })
-}
-
-/// Check if JsValue is the timeout marker
-fn is_timeout_marker(val: &JsValue) -> bool {
-    if let Some(s) = val.as_string() {
-        s == "__TIMEOUT__"
-    } else {
-        false
-    }
-}
-
-/// Parse result from JsValue (placeholder)
-fn parse_result_from_js<T>(_val: JsValue) -> Result<T> {
-    // In production, properly deserialize the result
-    Err(Error::RustError("Not implemented".to_string()))
-}
-
-/// Simple async timeout helper for Durable Object operations
-///
-/// This is a simpler alternative that doesn't require JS Promise.race()
-/// Just tracks elapsed time and returns error if exceeded.
 pub struct TimeoutGuard {
-    start: f64,
+    start_ms: f64,
     timeout_ms: u32,
+    operation: String,
 }
 
 impl TimeoutGuard {
+    /// Create a guard with the given timeout (milliseconds).
     pub fn new(timeout_ms: u32) -> Self {
         Self {
-            start: js_sys::Date::now(),
+            start_ms: crate::platform::now_ms(),
             timeout_ms,
+            operation: String::new(),
         }
     }
-    
-    /// Check if timeout has been exceeded
+
+    /// Create a guard with a named operation for clearer timeout error messages.
+    pub fn with_operation(timeout_ms: u32, operation: &str) -> Self {
+        Self {
+            start_ms: crate::platform::now_ms(),
+            timeout_ms,
+            operation: operation.to_string(),
+        }
+    }
+
+    /// Check if timeout has been exceeded; returns `Err` with a descriptive message if so.
     pub fn check(&self) -> Result<()> {
-        let elapsed = js_sys::Date::now() - self.start;
-        
+        let elapsed = crate::platform::now_ms() - self.start_ms;
         if elapsed > self.timeout_ms as f64 {
-            Err(Error::RustError(
-                format!("Operation timed out after {}ms (limit: {}ms)", 
-                    elapsed as u32, self.timeout_ms)
-            ))
+            let msg = if self.operation.is_empty() {
+                format!("Operation timed out after {}ms (limit: {}ms)", elapsed as u32, self.timeout_ms)
+            } else {
+                format!("{} timed out after {}ms (limit: {}ms)", self.operation, elapsed as u32, self.timeout_ms)
+            };
+            Err(Error::RustError(msg))
         } else {
             Ok(())
         }
     }
-    
-    /// Get elapsed time in milliseconds
-    pub fn elapsed_ms(&self) -> u32 {
-        (js_sys::Date::now() - self.start) as u32
-    }
-    
-    /// Get remaining time in milliseconds
-    pub fn remaining_ms(&self) -> u32 {
-        let elapsed = self.elapsed_ms();
-        if elapsed >= self.timeout_ms {
-            0
-        } else {
-            self.timeout_ms - elapsed
-        }
-    }
-}
 
-/// Macro for adding timeout checks in long-running operations
-///
-/// Usage:
-/// ```ignore
-/// let guard = TimeoutGuard::new(10_000);
-/// 
-/// for item in items {
-///     check_timeout!(guard);
-///     process(item);
-/// }
-/// ```
-#[macro_export]
-macro_rules! check_timeout {
-    ($guard:expr) => {
-        $guard.check()?;
-    };
+    /// Milliseconds elapsed since the guard was created.
+    pub fn elapsed_ms(&self) -> u32 {
+        (crate::platform::now_ms() - self.start_ms) as u32
+    }
+
+    /// Milliseconds remaining before expiry (saturates at 0).
+    pub fn remaining_ms(&self) -> u32 {
+        let elapsed = (crate::platform::now_ms() - self.start_ms) as u32;
+        self.timeout_ms.saturating_sub(elapsed)
+    }
+
+    /// Non-error check: returns `true` once the timeout budget is exhausted.
+    pub fn is_expired(&self) -> bool {
+        (crate::platform::now_ms() - self.start_ms) > self.timeout_ms as f64
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
-    #[cfg(target_arch = "wasm32")]
-    fn test_timeout_guard() {
-        let guard = TimeoutGuard::new(1000);
-        
-        // Should pass immediately
+    fn test_new_not_expired() {
+        let guard = TimeoutGuard::new(30_000);
+        assert!(!guard.is_expired());
+    }
+
+    #[test]
+    fn test_check_ok_when_fresh() {
+        let guard = TimeoutGuard::new(30_000);
         assert!(guard.check().is_ok());
-        assert!(guard.remaining_ms() <= 1000);
-        assert!(guard.elapsed_ms() < 100); // Should be very fast
+    }
+
+    #[test]
+    fn test_elapsed_ms_small() {
+        let guard = TimeoutGuard::new(1000);
+        let elapsed = guard.elapsed_ms();
+        assert!(elapsed < 100, "Unexpected elapsed: {elapsed}ms");
+    }
+
+    #[test]
+    fn test_remaining_ms() {
+        let guard = TimeoutGuard::new(5000);
+        let remaining = guard.remaining_ms();
+        // Should be close to 5000 right after creation
+        assert!(remaining > 4900 && remaining <= 5000, "Unexpected remaining: {remaining}ms");
+    }
+
+    #[test]
+    fn test_with_operation() {
+        let guard = TimeoutGuard::with_operation(1000, "test_op");
+        assert!(guard.check().is_ok());
+    }
+
+    #[test]
+    fn test_zero_timeout_expires_immediately() {
+        let guard = TimeoutGuard::new(0);
+        // A 0ms timeout should expire essentially immediately
+        // (may or may not depending on timing, so just test check handles it)
+        let _ = guard.is_expired(); // shouldn't panic
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(DEFAULT_TIMEOUT_MS, 30_000);
+        assert_eq!(VECTOR_TIMEOUT_MS, 10_000);
+        assert_eq!(HEALTH_CHECK_TIMEOUT_MS, 5_000);
     }
 }

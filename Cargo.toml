@@ -7,7 +7,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.89.0"
+rust-version = "1.94.1"
 authors = ["Igor Petrov <ihorpetroff@gmail.com>"]
 description = "QuartzDB - High-performance distributed edge database"
 license = "MIT"
@@ -18,11 +18,3 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 anyhow = "1.0"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-tracing-appender = "0.2"
-async-trait = "0.1"
-proptest = "1.4"
-config = "0.15.18"
-validator = { version = "0.20.0", features = ["derive"] }
-futures = "0.3"

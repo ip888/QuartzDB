@@ -99,7 +99,7 @@ impl RequestMetrics {
             path,
             status: 0,
             duration_ms: 0,
-            timestamp: js_sys::Date::now() as u64,
+            timestamp: crate::platform::now_ms() as u64,
         }
     }
 
@@ -201,14 +201,16 @@ pub struct Timer {
 }
 
 impl Timer {
+    /// Start a new timer at the current instant.
     pub fn new() -> Self {
         Self {
-            start: js_sys::Date::now(),
+            start: crate::platform::now_ms(),
         }
     }
 
+    /// Milliseconds elapsed since this timer was created.
     pub fn elapsed_ms(&self) -> u128 {
-        (js_sys::Date::now() - self.start) as u128
+        (crate::platform::now_ms() - self.start) as u128
     }
 }
 
@@ -272,7 +274,7 @@ pub async fn check_vector_health(env: &Env) -> bool {
 pub fn init_uptime() {
     let current = STARTUP_TIME.load(Ordering::Relaxed);
     if current == 0 {
-        STARTUP_TIME.store(js_sys::Date::now() as u64, Ordering::Relaxed);
+        STARTUP_TIME.store(crate::platform::now_ms() as u64, Ordering::Relaxed);
     }
 }
 
@@ -281,7 +283,7 @@ pub fn get_uptime_seconds() -> u64 {
     if start == 0 {
         return 0;
     }
-    let now = js_sys::Date::now() as u64;
+    let now = crate::platform::now_ms() as u64;
     (now - start) / 1000
 }
 
@@ -290,14 +292,36 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg(target_arch = "wasm32")]
-    fn test_timer() {
+    fn test_timer_starts_at_zero() {
         let timer = Timer::new();
-        std::thread::sleep(std::time::Duration::from_millis(10));
         let elapsed = timer.elapsed_ms();
-        assert!(elapsed >= 10);
+        // Should be very small (< 100ms) immediately after creation.
+        assert!(elapsed < 100, "Timer started with unexpected elapsed: {elapsed}ms");
     }
 
-    // Note: RequestMetrics tests require WASM environment (js_sys::Date)
-    // They are tested during actual Worker deployment
+    #[test]
+    fn test_request_metrics_new() {
+        let m = RequestMetrics::new("GET".into(), "/health".into());
+        assert_eq!(m.method, "GET");
+        assert_eq!(m.path, "/health");
+        assert_eq!(m.status, 0);
+        assert_eq!(m.duration_ms, 0);
+        assert!(m.timestamp > 0);
+    }
+
+    #[test]
+    fn test_request_metrics_finish() {
+        let mut m = RequestMetrics::new("POST".into(), "/api/vector/search".into());
+        m.finish(200, 42);
+        assert_eq!(m.status, 200);
+        assert_eq!(m.duration_ms, 42);
+    }
+
+    #[test]
+    fn test_uptime_init() {
+        init_uptime();
+        // After init, uptime should be 0 or very small
+        let uptime = get_uptime_seconds();
+        assert!(uptime < 2, "Unexpected uptime after init: {uptime}s");
+    }
 }

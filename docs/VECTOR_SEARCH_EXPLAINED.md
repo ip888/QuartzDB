@@ -1,533 +1,277 @@
-# Vector Search & AI Integration - Simple Explanation
+# Vector Search in QuartzDB
 
-**Last Updated:** October 17, 2025  
-**Audience:** Non-technical stakeholders, developers new to AI
+**Last Updated:** June 2026  
+**Audience:** Developers integrating QuartzDB, non-technical stakeholders
 
 ---
 
-## 🤔 What is Vector Search? (ELI5 Version)
+## What Is Vector Search?
 
-Imagine you have a library with millions of books. Traditional databases are like searching by the book's title or author - you need exact matches.
+Traditional databases search by exact field matches — title, ID, keyword.
+Vector search instead understands *meaning*. It converts data into numeric representations (vectors) and finds items that are semantically similar.
 
-**Vector search is different:** It's like having a librarian who understands the *meaning* of what you're looking for. You say "I want something about adventure in space," and it finds books that match the *concept*, not just the exact words.
-
-### Real-World Example
-
-**Traditional Database Search:**
+**Traditional search:**
 
 ```
 Query: "dog"
-Results: Only finds exactly "dog"
-Misses: "puppy", "canine", "golden retriever"
+Results: Only rows where a field contains "dog"
 ```
 
-**Vector Search:**
+**Vector search:**
 
 ```
 Query: "dog"
-Results: Finds "dog", "puppy", "canine", "golden retriever", 
-         "pet", "animal companion", etc.
-Why? It understands these all mean similar things!
+Results: "dog", "puppy", "canine", "golden retriever"
+Why? The vectors for these words are close in geometric space.
 ```
 
 ---
 
-## 🧠 How It Actually Works (Simple Tech Explanation)
+## How It Works
 
-### Step 1: Turn Everything Into Numbers (Vectors)
+### Step 1: Turn Data Into Vectors (Embeddings)
 
-AI models (like OpenAI, Google, etc.) convert text/images into "vectors" - just lists of numbers that represent meaning.
+AI embedding models (OpenAI, Cohere, Hugging Face, etc.) convert text or images into dense numeric arrays — typically 384 to 1536 floating-point numbers.
 
 ```
-"cute dog"        → [0.2, 0.8, 0.1, 0.9, ...]  (768 numbers)
-"adorable puppy"  → [0.3, 0.7, 0.2, 0.8, ...]  (768 numbers)
-"angry cat"       → [0.9, 0.1, 0.8, 0.2, ...]  (768 numbers)
+"cute dog"        → [0.2, 0.8, 0.1, 0.9, ...]   (384 floats)
+"adorable puppy"  → [0.3, 0.7, 0.2, 0.8, ...]   (384 floats)
+"angry cat"       → [0.9, 0.1, 0.8, 0.2, ...]   (384 floats)
 ```
 
-**Key Insight:** Similar things have similar numbers!
+Similar concepts produce vectors that are close together; unrelated concepts are far apart.
 
-### Step 2: Store These Numbers in the Database
+### Step 2: Store Vectors in QuartzDB
 
-QuartzDB will store:
+Each vector is stored with an ID and optional metadata:
 
-- The original data (text, image reference, etc.)
-- The vector (list of numbers)
-- An index to make searching fast
-
-```rust
-// What gets stored
+```json
+POST /api/vector/insert
 {
-  id: "product_123",
-  text: "Comfortable running shoes",
-  vector: [0.2, 0.8, 0.1, 0.9, ...], // 768 numbers
-  metadata: { price: 79.99, category: "shoes" }
+  "id": "product_123",
+  "vector": [0.2, 0.8, 0.1, 0.9, ...],
+  "metadata": { "name": "Running shoes", "price": 79.99 }
 }
 ```
 
-### Step 3: Search By Similarity
+### Step 3: Search by Similarity
 
-When someone searches, we:
+Send a query vector and get back the closest matches:
 
-1. Convert their search into a vector
-2. Find vectors in the database that are "close" (mathematically similar)
-3. Return those results
-
+```json
+POST /api/vector/search
+{
+  "vector": [0.3, 0.7, 0.2, 0.8, ...],
+  "k": 10
+}
 ```
-User searches: "athletic footwear"
-→ Convert to vector: [0.3, 0.7, 0.2, 0.8, ...]
-→ Find similar vectors in database
-→ Return: running shoes, sneakers, trainers
+
+Response:
+
+```json
+{
+  "results": [
+    { "id": "product_123", "score": 0.95, "metadata": { "name": "Running shoes", "price": 79.99 } },
+    { "id": "product_456", "score": 0.87, "metadata": { "name": "Trail sneakers", "price": 64.99 } }
+  ]
+}
 ```
 
 ---
 
-## 🏗️ How QuartzDB Will Implement Vector Search
+## QuartzDB Architecture
 
-### Architecture Overview
+QuartzDB runs on Cloudflare Workers (WASM) with Durable Objects for persistent state.
 
 ```text
-┌─────────────────────────────────────────────────┐
-│                 APPLICATION                     │
-│  (Your AI app, e-commerce site, chatbot, etc.)  │
-└─────────────────┬───────────────────────────────┘
-                  │
-                  │ 1. Insert vectors
-                  │ 2. Search vectors
-                  ↓
-┌─────────────────────────────────────────────────┐
-│              QuartzDB API Server                │
-│  - REST API (HTTP)                              │
-│  - gRPC API (high performance)                  │
-└─────────────────┬───────────────────────────────┘
-                  │
-                  ↓
-┌─────────────────────────────────────────────────┐
-│           Vector Search Engine                  │
-│  ┌──────────────┐  ┌──────────────┐             │
-│  │ Vector Index │  │ Similarity   │             │
-│  │ (HNSW/IVF)   │  │ Algorithms   │             │
-│  └──────────────┘  └──────────────┘             │
-└─────────────────┬───────────────────────────────┘
-                  │
-                  ↓
-┌─────────────────────────────────────────────────┐
-│          Storage Layer (Existing!)              │
-│  - LSM Tree (for fast writes)                   │
-│  - WAL (durability)                             │
-│  - Cache (speed)                                │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│              Your Application                │
+│  (AI app, e-commerce, chatbot, etc.)         │
+└──────────────────┬───────────────────────────┘
+                   │  HTTPS (REST API)
+                   ↓
+┌──────────────────────────────────────────────┐
+│        Cloudflare Edge (300+ locations)       │
+│  ┌──────────────────────────────────────┐    │
+│  │  Worker (WASM on V8 isolate)         │    │
+│  │  - Router: /api/vector/*             │    │
+│  │  - Auth: API key middleware          │    │
+│  │  - Validation: request checks        │    │
+│  │  - Shard routing: consistent hash    │    │
+│  └──────────────┬───────────────────────┘    │
+│                 │                             │
+│   ┌─────────────┴────────────────┐           │
+│   ↓                              ↓           │
+│  ┌────────────────┐  ┌────────────────┐      │
+│  │ VectorIndex DO │  │ VectorIndex DO │ ...  │
+│  │ (HNSW graph)   │  │ (HNSW graph)   │      │
+│  │  + SQLite      │  │  + SQLite      │      │
+│  └────────────────┘  └────────────────┘      │
+└──────────────────────────────────────────────┘
 ```
 
-### Key Components We'll Build (Week 4)
+**Key components:**
 
-#### 1. Vector Storage Format
+- **Worker**: Stateless WASM process handling routing, authentication, validation, and shard selection.
+- **Durable Objects**: Each shard stores an HNSW index in memory with SQLite-backed persistence. Strongly consistent and automatically replicated.
+- **Shard Router**: Vectors are distributed across shards by consistent hashing on the vector ID. Search queries fan out to all shards and results are merged.
 
-**Simple design:**
+---
 
-```rust
-struct VectorDocument {
-    id: String,              // Unique identifier
-    vector: Vec<f32>,        // List of numbers (typically 384-1536 dimensions)
-    metadata: Json,          // Additional data (original text, tags, etc.)
-    timestamp: i64,          // When it was added
+## API Reference
+
+All vector endpoints live under `/api/vector/`. Authenticated requests require an `Authorization: Bearer qdb_...` header.
+
+### Insert a Vector
+
+```
+POST /api/vector/insert
+```
+
+```json
+{
+  "id": "vec_001",
+  "vector": [0.1, 0.2, ...],
+  "metadata": { "label": "example" }
 }
 ```
 
-#### 2. Similarity Algorithms (How We Compare)
+### Batch Insert
 
-Three main ways to measure "similarity":
+```
+POST /api/vector/batch-insert
+```
 
-##### a) Cosine Similarity (most common)
+```json
+{
+  "vectors": [
+    { "id": "vec_001", "vector": [0.1, 0.2, ...], "metadata": {} },
+    { "id": "vec_002", "vector": [0.3, 0.4, ...], "metadata": {} }
+  ]
+}
+```
 
-- Measures angle between vectors
-- Range: -1 to 1 (1 = identical, -1 = opposite)
-- Best for: Text, semantic search
+### Search
 
-##### b) Euclidean Distance
+```
+POST /api/vector/search
+```
 
-- Measures straight-line distance
-- Range: 0 to ∞ (0 = identical)
-- Best for: Image embeddings, spatial data
+```json
+{
+  "vector": [0.1, 0.2, ...],
+  "k": 10
+}
+```
 
-##### c) Dot Product
+The `k` parameter controls how many results to return. Valid range: 1-100.
 
-- Mathematical multiplication
-- Faster but needs normalized vectors
-- Best for: Performance-critical applications
+### Get by ID
 
-#### 3. Index Structure (Makes Search Fast)
+```
+GET /api/vector/get/:id
+```
 
-We'll implement **HNSW (Hierarchical Navigable Small World)**:
+### Delete
+
+```
+DELETE /api/vector/delete/:id
+```
+
+---
+
+## The HNSW Algorithm
+
+QuartzDB uses **HNSW (Hierarchical Navigable Small World)** for approximate nearest-neighbor search.
+
+Think of it like a highway system:
+
+| Layer | Analogy | Purpose |
+|-------|---------|---------|
+| Top layers | Express highways | Skip most nodes, get close fast |
+| Middle layers | Regional roads | Narrow the search area |
+| Bottom layer | Local streets | Find the exact nearest neighbors |
+
+Each layer is a proximity graph. Searches start at the top (sparse, long-range links) and descend through denser layers until reaching the bottom, where the final k nearest neighbors are identified.
 
 **Why HNSW?**
 
-- ✅ Very fast searches (milliseconds for millions of vectors)
-- ✅ Good accuracy (finds correct results 95%+ of the time)
-- ✅ Memory efficient
-- ✅ Battle-tested (used by major vector databases)
+- Sub-millisecond search over large datasets
+- High recall (>95% accuracy at recommended settings)
+- Memory-efficient layered structure
+- No training phase — vectors are inserted incrementally
 
-**How it works (simplified):**
-Think of it like a highway system:
-
-- Express highways (skip most points, get close fast)
-- Regional roads (get closer)
-- Local streets (find exact destination)
-
-### Simple API We'll Expose
-
-```rust
-// 1. INSERT vectors
-POST /api/v1/vectors
-{
-  "collection": "products",
-  "id": "product_123",
-  "vector": [0.2, 0.8, ...],  // 768 numbers
-  "metadata": { "name": "Running shoes", "price": 79.99 }
-}
-
-// 2. SEARCH for similar vectors
-POST /api/v1/vectors/search
-{
-  "collection": "products",
-  "vector": [0.3, 0.7, ...],  // Query vector
-  "top_k": 10,                // Return top 10 results
-  "filters": {                // Optional filters
-    "price": { "lt": 100 }    // Less than $100
-  }
-}
-
-// Response:
-{
-  "results": [
-    {
-      "id": "product_123",
-      "score": 0.95,           // Similarity score
-      "metadata": { ... }
-    },
-    ...
-  ],
-  "took_ms": 5                // Query time in milliseconds
-}
-```
+For a deep dive, see [HNSW_EXPLAINED.md](HNSW_EXPLAINED.md).
 
 ---
 
-## 🤝 AI Companies Integration (No Partnership Needed Initially!)
+## Similarity Metric
 
-### The Good News: We DON'T Need Partnerships to Start
+QuartzDB uses **cosine similarity** to compare vectors.
 
-**Why?** We're just storing and searching vectors. Users bring their own vectors from:
+$$\text{cosine\_similarity}(\mathbf{a}, \mathbf{b}) = \frac{\mathbf{a} \cdot \mathbf{b}}{|\mathbf{a}| \times |\mathbf{b}|}$$
 
-### Popular AI Services (Users Use Directly)
+- Returns a score from -1 to 1
+- 1 = identical direction (most similar)
+- 0 = orthogonal (unrelated)
+- -1 = opposite
 
-#### 1. **OpenAI** (Most Popular)
-
-- Service: Embeddings API
-- Cost: $0.0001 per 1K tokens
-- Models: `text-embedding-3-small` (1536 dimensions)
-- Use case: General-purpose text understanding
-
-```python
-# User's code (not ours):
-import openai
-embedding = openai.embeddings.create(
-    input="cute dog",
-    model="text-embedding-3-small"
-)
-# Then they store in QuartzDB
-```
-
-#### 2. **Cohere** (Cost-Effective Alternative)
-
-- Service: Embed API
-- Cost: Free tier, then $0.0001/1K tokens
-- Models: `embed-english-v3.0` (1024 dimensions)
-- Use case: Multilingual, cheaper than OpenAI
-
-#### 3. **Hugging Face** (Open Source, Free)
-
-- Service: Sentence Transformers library
-- Cost: FREE (runs locally)
-- Models: 100+ open-source models
-- Use case: Privacy-sensitive, offline use
-
-```python
-# User's code:
-from sentence_transformers import SentenceTransformer
-model = SentenceTransformer('all-MiniLM-L6-v2')
-embedding = model.encode("cute dog")
-# Then they store in QuartzDB
-```
-
-#### 4. **Google Vertex AI**
-
-- Service: Embedding API
-- Cost: $0.00025 per 1K characters
-- Models: Gecko embeddings
-- Use case: Google Cloud customers
-
-#### 5. **Anthropic Claude** (Future)
-
-- Currently focused on chat
-- May add embeddings later
-- We'll support when available
-
-### Our Role: Just Store & Search
-
-```
-┌──────────────┐
-│ User's App   │
-└──────┬───────┘
-       │
-       │ 1. Gets embeddings from OpenAI/Cohere/etc
-       │
-       ↓
-┌──────────────┐
-│  QuartzDB    │ ← We just store and search!
-│  (We don't   │   No AI partnerships needed
-│   generate   │   Users bring their own vectors
-│   vectors!)  │
-└──────────────┘
-```
-
-### Potential Partnerships (Future, Optional)
-
-**Phase 1 (Now):** No partnerships needed
-
-- Users handle embedding generation
-- We focus on storage & search performance
-
-**Phase 2 (Months 6-12):** Value-add partnerships
-
-- **Hugging Face:** Featured in their docs as "recommended database"
-- **Cohere:** Case studies, joint marketing
-- **OpenAI:** Be listed in their ecosystem
-
-**Phase 3 (Year 2+):** Deep integrations
-
-- Built-in embedding generation in QuartzDB
-- One-click setup: "Use OpenAI embeddings"
-- Revenue sharing for embedded models
+Cosine similarity is well-suited for text embeddings, where direction in vector space matters more than magnitude.
 
 ---
 
-## 🎯 Real-World Use Cases We'll Support
+## Bringing Your Own Embeddings
 
-### 1. E-commerce Product Search
+QuartzDB stores and searches vectors — it does **not** generate embeddings. Use any embedding provider:
 
-**Problem:** User searches "comfortable shoes for walking"
-**Traditional DB:** Finds nothing (no exact match)
-**QuartzDB:** Finds running shoes, sneakers, walking boots
+| Provider | Model | Dimensions | Notes |
+|----------|-------|------------|-------|
+| OpenAI | `text-embedding-3-small` | 1536 | Most popular |
+| Cohere | `embed-english-v3.0` | 1024 | Multilingual support |
+| Hugging Face | `all-MiniLM-L6-v2` | 384 | Free, runs locally |
+| Google Vertex AI | Gecko | 768 | GCP integration |
 
-```rust
-// Store products with embeddings
-db.insert("products", {
-  id: "shoe_123",
-  name: "Nike Air Max",
-  vector: get_embedding("comfortable running shoes"),
-  price: 120
-});
-
-// Search semantically
-results = db.vector_search("products", 
-  get_embedding("shoes for walking"),
-  limit: 10
-);
-```
-
-### 2. AI Chatbot Memory
-
-**Problem:** Chatbot needs to remember previous conversations
-**Solution:** Store conversation history as vectors, retrieve relevant context
-
-```rust
-// Store chat messages
-db.insert("chat_history", {
-  user_id: "user_456",
-  message: "I need help with my order",
-  vector: get_embedding("I need help with my order"),
-  timestamp: now()
-});
-
-// When user asks new question, find relevant past conversations
-relevant_history = db.vector_search("chat_history",
-  get_embedding("where is my package?"),
-  filters: { user_id: "user_456" },
-  limit: 5
-);
-```
-
-### 3. Content Recommendation
-
-**Problem:** Recommend articles similar to what user is reading
-**Solution:** Find articles with similar embeddings
-
-```rust
-// Store articles
-db.insert("articles", {
-  id: "article_789",
-  title: "Introduction to Rust",
-  vector: get_embedding("Rust programming language tutorial"),
-  category: "programming"
-});
-
-// Recommend similar articles
-similar_articles = db.vector_search("articles",
-  current_article.vector,
-  limit: 5
-);
-```
-
-### 4. Image Similarity (Future)
-
-**Problem:** Find similar images
-**Solution:** Use image embeddings (CLIP model from OpenAI)
-
-```rust
-// Store images
-db.insert("images", {
-  id: "img_001",
-  url: "https://...",
-  vector: get_image_embedding(image),  // 512 dimensions
-  tags: ["dog", "outdoor"]
-});
-
-// Find similar images
-similar_images = db.vector_search("images",
-  uploaded_image.vector,
-  limit: 20
-);
-```
+QuartzDB currently supports **384-dimensional** vectors. Ensure your embedding model outputs 384 dimensions, or project/truncate to that size before inserting.
 
 ---
 
-## 📊 Performance Targets (What We Promise)
+## Use Cases
 
-### Benchmarks We'll Achieve
+### Semantic Product Search
 
-| Metric | Target | Why It Matters |
-|--------|--------|----------------|
-| **Insert Speed** | 10K vectors/sec | Fast bulk imports |
-| **Search Latency** | <10ms (p99) | Real-time applications |
-| **Index Build Time** | 1M vectors in <5 min | Quick startup |
-| **Memory Overhead** | <20% of vector data | Cost efficiency |
-| **Accuracy** | >95% recall@10 | Finds right results |
+Store product descriptions as vectors. Users search "comfortable shoes for running" and get results for sneakers, trainers, and running shoes — even without an exact keyword match.
 
-### Comparison to Competitors (Projected)
+### AI Chatbot Memory (RAG)
 
-| Database | Latency | Cost | Edge Support |
-|----------|---------|------|--------------|
-| **Pinecone** | ~50ms | $$$ | ❌ Cloud-only |
-| **Weaviate** | ~20ms | $$ | ⚠️ Limited |
-| **Qdrant** | ~15ms | $ | ⚠️ Self-host |
-| **QuartzDB** | **<10ms** | **$** | ✅ **Native** |
+Store past conversations as vectors. When a user asks a new question, retrieve the most relevant prior messages for context, then pass them to an LLM.
+
+### Content Recommendations
+
+Store article/video embeddings. Given the current item's vector, find the most similar items to recommend.
+
+### Duplicate Detection
+
+Insert document embeddings and search with `k=1`. A high similarity score indicates a near-duplicate.
 
 ---
 
-## 🛠️ Implementation Plan (Week 4)
+## Performance Characteristics
 
-### Day 1: Design & Setup
-
-- [ ] Design vector storage schema
-- [ ] Choose similarity algorithms (cosine, euclidean)
-- [ ] Set up vector index structure (HNSW)
-
-### Day 2: Core Functionality
-
-- [ ] Implement vector CRUD operations
-  - Insert vector
-  - Update vector
-  - Delete vector
-  - Bulk insert
-- [ ] Add basic similarity search
-
-### Day 3: Indexing
-
-- [ ] Implement HNSW index
-- [ ] Add index building
-- [ ] Add index persistence
-
-### Day 4: API Integration
-
-- [ ] Add HTTP endpoints for vector operations
-- [ ] Add query filtering by metadata
-- [ ] Add pagination for results
-
-### Day 5: Testing & Optimization
-
-- [ ] Unit tests for all operations
-- [ ] Performance benchmarks
-- [ ] Memory profiling
-- [ ] Documentation
+| Property | Value |
+|----------|-------|
+| Supported dimensions | 384 |
+| Similarity metric | Cosine |
+| Index algorithm | HNSW |
+| Deployment | Cloudflare Workers (WASM) |
+| Storage backend | Durable Objects (SQLite) |
+| Latency | Sub-10ms from nearest edge location |
+| Scaling | Automatic, shard-based |
 
 ---
 
-## 📚 Learning Resources (For Team)
+## Further Reading
 
-### Understanding Vectors & Embeddings
-
+- [HNSW_EXPLAINED.md](HNSW_EXPLAINED.md) — Detailed walkthrough of the HNSW algorithm
+- [USER_GUIDE.md](../USER_GUIDE.md) — Full API guide with authentication and billing
+- [HNSW Paper (Malkov & Yashunin, 2016)](https://arxiv.org/abs/1603.09320)
 - [OpenAI Embeddings Guide](https://platform.openai.com/docs/guides/embeddings)
-- [Sentence Transformers Documentation](https://www.sbert.net/)
-- [Vector Search Explained (Video)](https://www.youtube.com/watch?v=klTvEwg3oJ4)
-
-### Technical Deep Dives
-
-- [HNSW Algorithm Paper](https://arxiv.org/abs/1603.09320)
-- [Approximate Nearest Neighbors](https://github.com/erikbern/ann-benchmarks)
-- [Vector Database Comparison](https://benchmark.vectorview.ai/)
-
-### Rust Libraries We Might Use
-
-- `ndarray` - Multidimensional arrays for vectors
-- `nalgebra` - Linear algebra operations
-- `hnsw` - HNSW implementation in Rust
-- `serde_json` - JSON serialization for metadata
-
----
-
-## ❓ FAQ
-
-### Q: Do we need to understand AI/ML deeply?
-
-**A:** No! We're just storing numbers and finding similar numbers. The AI models do the hard work of turning text/images into vectors.
-
-### Q: What if AI technology changes?
-
-**A:** We're agnostic! Users can use any embedding model. We just store and search vectors, regardless of where they came from.
-
-### Q: How do we compete with specialized vector databases?
-
-**A:** Our edge-first architecture! Pinecone, Weaviate, etc. are cloud-only. We run at the edge for <10ms latency.
-
-### Q: What about data privacy?
-
-**A:** Vectors are already "encrypted" in a sense - they're just numbers. Hard to reverse engineer the original text from a vector.
-
-### Q: Can we add AI features later?
-
-**A:** Yes! Phase 1 is storage/search. Phase 2+ can add built-in embedding generation, model hosting, etc.
-
----
-
-## ✅ Summary: What We're Building
-
-**Simple Version:**
-A database that stores "meaning" as numbers and lets you search by similarity instead of exact matches.
-
-**Technical Version:**
-A high-performance vector database with HNSW indexing, optimized for edge deployment, supporting multiple similarity metrics and real-time search.
-
-**Business Version:**
-The missing piece for running AI applications at the edge with ultra-low latency and no cloud dependencies.
-
----
-
-**Next Steps:**
-
-1. ✅ Understand vector search conceptually
-2. [ ] Design storage schema
-3. [ ] Implement basic CRUD operations
-4. [ ] Build HNSW index
-5. [ ] Integrate with API server
-
-Let's build! 🚀

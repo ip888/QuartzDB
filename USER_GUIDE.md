@@ -1,7 +1,7 @@
 # QuartzDB User Guide
 
 **Version:** 0.1.0  
-**Last Updated:** January 2, 2026  
+**Last Updated:** April 12, 2026  
 **Platform:** Cloudflare Workers + Durable Objects
 
 ---
@@ -11,23 +11,27 @@
 1. [Overview](#overview)
 2. [Architecture](#architecture)
 3. [Project Organization](#project-organization)
-4. [How It Works](#how-it-works)
+4. [Authentication](#authentication)
 5. [API Reference](#api-reference)
 6. [Vector Search with HNSW](#vector-search-with-hnsw)
-7. [Development Guide](#development-guide)
-8. [Deployment](#deployment)
+7. [Multi-Tenant SaaS](#multi-tenant-saas)
+8. [Development Guide](#development-guide)
+9. [Deployment](#deployment)
+10. [Security](#security)
 
 ---
 
 ## Overview
 
-QuartzDB is a **serverless vector database** running on Cloudflare Workers edge network. It provides:
+QuartzDB is a **serverless vector database** running on the Cloudflare Workers edge network. It provides:
 
-- ✅ **Key-Value Storage** - Fast, persistent storage with Durable Objects
-- ✅ **Vector Search** - HNSW (Hierarchical Navigable Small World) algorithm for similarity search
-- ✅ **Edge Computing** - Deployed to 300+ locations worldwide
-- ✅ **Zero Ops** - No servers to manage, auto-scaling
-- ✅ **Analytics** - Built-in monitoring with Analytics Engine
+- ✅ **Key-Value Storage** — Fast, persistent storage with Durable Objects
+- ✅ **Vector Search** — HNSW (Hierarchical Navigable Small World) algorithm for similarity search
+- ✅ **Edge Computing** — Deployed to 300+ locations worldwide
+- ✅ **Zero Ops** — No servers to manage, auto-scaling
+- ✅ **Multi-Tenant SaaS** — Signup, API key auth, usage tracking, Stripe billing
+- ✅ **Sharded Architecture** — Fan-out search across multiple Durable Objects
+- ✅ **Analytics** — Request metrics tracked in Analytics Engine
 
 ### Key Features
 
@@ -35,9 +39,12 @@ QuartzDB is a **serverless vector database** running on Cloudflare Workers edge 
 |---------|------------|---------|
 | **Storage** | Durable Objects + SQLite | Persistent key-value store |
 | **Vector Search** | HNSW Algorithm | O(log n) nearest neighbor search |
-| **Runtime** | WASM on V8 | Fast, secure, portable |
+| **Runtime** | Rust → WASM on V8 | Fast, secure, portable |
 | **Edge Network** | Cloudflare Workers | Low latency globally |
-| **Analytics** | Analytics Engine | Real-time metrics |
+| **Analytics** | Analytics Engine | Real-time request metrics |
+| **Auth** | API keys (SHA-256 hashed in KV) | Multi-tenant isolation |
+| **Billing** | Stripe webhooks + KV usage records | Per-tenant usage tracking |
+| **Sharding** | Consistent-hash shard router | Horizontal scaling |
 
 ---
 
@@ -46,72 +53,58 @@ QuartzDB is a **serverless vector database** running on Cloudflare Workers edge 
 ### High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Cloudflare Edge Network                  │
-│                      (300+ Locations)                        │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      QuartzDB Worker                         │
-│                      (WASM Runtime)                          │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  Router (worker-rs)                                  │   │
-│  │  - /health, /api/*, /vector/*                        │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-           │                              │
-           ▼                              ▼
-┌─────────────────────┐      ┌──────────────────────────┐
-│  StorageObject      │      │  VectorIndexObject       │
-│  (Durable Object)   │      │  (Durable Object)        │
-│  ┌────────────────┐ │      │  ┌──────────────────┐   │
-│  │ HashMap Cache  │ │      │  │ HNSW Index       │   │
-│  │ + SQLite       │ │      │  │ Multi-layer      │   │
-│  └────────────────┘ │      │  │ Graph            │   │
-└─────────────────────┘      │  └──────────────────┘   │
-                             └──────────────────────────┘
-                                         │
-                                         ▼
-                             ┌──────────────────────────┐
-                             │   Analytics Engine       │
-                             │   (Metrics Storage)      │
-                             └──────────────────────────┘
+                        ┌─────────────────────────────────┐
+                        │   Next.js Dashboard              │
+                        │   (quartz-dashboard)             │
+                        │   - Signup / Pricing / Playground│
+                        └────────────┬────────────────────┘
+                                     │
+                        ┌────────────▼────────────────────┐
+                        │  Cloudflare Edge (300+ DCs)      │
+                        │  ┌───────────────────────────┐  │
+                        │  │  Rate Limiting (CF native) │  │
+                        │  └───────────┬───────────────┘  │
+                        └──────────────┼──────────────────┘
+                                       │
+         ┌─────────────────────────────▼──────────────────────────┐
+         │                   QuartzDB Worker (WASM)               │
+         │  ┌─────────┐ ┌───────────┐ ┌───────────┐ ┌─────────┐ │
+         │  │  Auth    │ │  Router   │ │ Validation│ │ Timeout │ │
+         │  │(api key) │ │ (lib.rs)  │ │           │ │  Guard  │ │
+         │  └────┬────┘ └─────┬─────┘ └───────────┘ └─────────┘ │
+         │       │      ┌─────┴─────┐                             │
+         │       │      │  Shard    │                             │
+         │       │      │  Router   │                             │
+         │       │      └──┬──┬──┬──┘                             │
+         └───────┼─────────┼──┼──┼────────────────────────────────┘
+                 │         │  │  │
+      ┌──────────┘    ┌────┘  │  └────┐
+      │               │       │       │
+      ▼               ▼       ▼       ▼
+┌──────────┐  ┌──────────┐  ...  ┌──────────┐
+│ TENANT_KV│  │ Shard 0  │       │ Shard N  │
+│ (KV      │  │ (Durable │       │ (Durable │
+│  Store)  │  │  Object) │       │  Object) │
+│          │  │  ┌──────┐│       │  ┌──────┐│
+│ apikey:… │  │  │ HNSW ││       │  │ HNSW ││
+│ tenant:… │  │  │ Index ││       │  │ Index ││
+│ usage:…  │  │  └──────┘│       │  └──────┘│
+│ stripe:… │  │  + SQLite │       │  + SQLite │
+└──────────┘  └──────────┘       └──────────┘
 ```
 
-### Component Breakdown
+### Request Flow
 
-#### 1. **Worker (Main Entry Point)**
-- **Location:** `quartz-faas/src/lib.rs`
-- **Responsibility:** HTTP routing, request handling, health checks
-- **Technology:** Rust + worker-rs + WASM
-- **Execution:** Runs on every incoming request
-
-#### 2. **Durable Objects (State Management)**
-
-**StorageObject** - Key-Value Store
-- **Location:** `quartz-faas/src/durable.rs`
-- **Persistence:** SQLite backend (automatic)
-- **Cache:** In-memory HashMap for fast reads
-- **Operations:** PUT, GET, DELETE, LIST
-
-**VectorIndexObject** - Vector Search Engine
-- **Location:** `quartz-faas/src/durable.rs`
-- **Algorithm:** HNSW (Hierarchical Navigable Small World)
-- **Persistence:** Serialized HNSW graph to SQLite
-- **Operations:** INSERT, SEARCH, STATS, CONFIG
-
-#### 3. **HNSW Vector Search**
-- **Location:** `quartz-faas/src/vector/hnsw.rs`
-- **Algorithm:** Multi-layer proximity graph
-- **Complexity:** O(log n) search, O(log n) insert
-- **WASM-Compatible:** Uses `js_sys` for random numbers
-
-#### 4. **Analytics Engine**
-- **Location:** `quartz-faas/src/monitoring.rs`
-- **Metrics:** Request latency, success/failure rates
-- **Storage:** Cloudflare Analytics Engine
-- **Retention:** Real-time + historical data
+1. **Ingress**: Client → Cloudflare edge (nearest datacenter)
+2. **Rate Limit**: Cloudflare native rate limiting (per-IP)
+3. **Auth**: Extract API key → validate against env secret (legacy) or KV (multi-tenant)
+4. **Usage Check**: For `qdb_*` keys, check monthly query/insert limits
+5. **Validation**: Validate request body (dimensions, k value, etc.)
+6. **Shard Routing**: Consistent hash routes vectors to the correct Durable Object
+7. **Processing**: DO runs HNSW insert/search/delete
+8. **Timeout Guard**: Elapsed-time check after DO call; fan-out breaks early if budget exceeded
+9. **Billing**: Track query/insert count for multi-tenant keys
+10. **Analytics**: Log request metrics to Analytics Engine
 
 ---
 
@@ -121,150 +114,130 @@ QuartzDB is a **serverless vector database** running on Cloudflare Workers edge 
 
 ```
 QuartzDB/
-├── quartz-faas/              # Main application (WASM-based)
+├── quartz-faas/                   # Rust backend (Cloudflare Worker)
 │   ├── src/
-│   │   ├── lib.rs            # Worker entry point + router
-│   │   ├── api.rs            # Request/response types
-│   │   ├── error.rs          # Error handling
-│   │   ├── durable.rs        # Durable Objects (Storage + Vector)
-│   │   ├── monitoring.rs     # Analytics Engine integration
-│   │   └── vector/           # Vector search module
-│   │       ├── mod.rs        # Module exports
-│   │       └── hnsw.rs       # HNSW algorithm implementation
-│   │
-│   ├── wrangler.toml         # Cloudflare Workers configuration
-│   └── Cargo.toml            # Rust dependencies
+│   │   ├── lib.rs                 # Worker entry point, HTTP router
+│   │   ├── api.rs                 # Request/response type definitions
+│   │   ├── auth.rs                # API key extraction + validation
+│   │   ├── billing.rs             # Stripe webhooks, usage tracking
+│   │   ├── durable.rs             # Durable Objects (StorageObject + VectorIndexObject)
+│   │   ├── error.rs               # FaasError enum
+│   │   ├── monitoring.rs          # RequestMetrics, Timer, Analytics Engine
+│   │   ├── platform.rs            # Cross-platform abstraction (time, random, crypto)
+│   │   ├── ratelimit.rs           # Rate limiting (CF headers + token bucket)
+│   │   ├── sharding.rs            # Consistent-hash shard router
+│   │   ├── tenant.rs              # Multi-tenant CRUD, plan limits
+│   │   ├── timeout.rs             # TimeoutGuard for elapsed-time checking
+│   │   ├── validation.rs          # Input validation for all endpoints
+│   │   └── vector/                # Vector search module
+│   │       ├── mod.rs             # Module exports
+│   │       ├── hnsw.rs            # HNSW algorithm implementation
+│   │       └── simd.rs            # WASM SIMD distance functions
+│   ├── wrangler.toml              # Cloudflare Workers configuration
+│   └── Cargo.toml                 # Rust dependencies
 │
-├── docs/
-│   └── strategy/             # Strategic planning documents
-│       ├── PRODUCTION_ROADMAP.md
-│       ├── PASSIVE_INCOME_STRATEGY.md
-│       ├── RESTART_PLAN.md
-│       └── WEEK_1_ACTION_PLAN.md
+├── quartz-dashboard/              # Next.js frontend
+│   └── src/
+│       ├── app/
+│       │   ├── page.tsx           # Landing page
+│       │   ├── dashboard/page.tsx # Dashboard (stats, playground)
+│       │   ├── signup/page.tsx    # Tenant signup flow
+│       │   ├── pricing/page.tsx   # Pricing tiers
+│       │   ├── playground/page.tsx# Interactive API playground
+│       │   └── docs/page.tsx      # Documentation page
+│       └── lib/
+│           ├── api.ts             # TypeScript API client
+│           └── auth.tsx           # Auth context provider
 │
-├── Cargo.toml                # Workspace configuration
-└── README.md                 # Project overview
+├── tests/                         # Shell-based integration tests
+│   ├── smoke_test.sh
+│   ├── load_test.sh
+│   ├── scenario_test.sh
+│   └── quick_test.sh
+│
+├── docs/                          # Technical documentation
+│   ├── HNSW_EXPLAINED.md
+│   └── VECTOR_SEARCH_EXPLAINED.md
+│
+├── Cargo.toml                     # Workspace configuration
+└── USER_GUIDE.md                  # This file
 ```
 
 ### Module Responsibilities
 
 | Module | File | Responsibility |
 |--------|------|----------------|
-| **Router** | `lib.rs` | HTTP routing, middleware, health checks |
+| **Router** | `lib.rs` | HTTP routing, middleware orchestration |
 | **API** | `api.rs` | Request/response data structures |
-| **Error** | `error.rs` | Error types and conversions |
-| **Storage** | `durable.rs` | Key-value store (StorageObject) |
-| **Vector** | `durable.rs` | Vector index (VectorIndexObject) |
-| **HNSW** | `vector/hnsw.rs` | HNSW algorithm implementation |
-| **Monitoring** | `monitoring.rs` | Metrics collection and reporting |
+| **Auth** | `auth.rs` | API key extraction, legacy + tenant validation |
+| **Billing** | `billing.rs` | Stripe webhook handler, per-tenant usage counters |
+| **Durable** | `durable.rs` | StorageObject (KV) + VectorIndexObject (HNSW) |
+| **Error** | `error.rs` | `FaasError` enum with `thiserror` |
+| **Monitoring** | `monitoring.rs` | RequestMetrics, Timer, Analytics Engine |
+| **Platform** | `platform.rs` | Cross-platform: `now_ms()`, `random_f64()`, `sha256()`, `hmac_sha256()` |
+| **Rate Limit** | `ratelimit.rs` | CF header check + token bucket (for DOs) |
+| **Sharding** | `sharding.rs` | Consistent-hash router, fan-out merge |
+| **Tenant** | `tenant.rs` | TenantManager CRUD, plan limits, key generation |
+| **Timeout** | `timeout.rs` | TimeoutGuard for elapsed-time checking |
+| **Validation** | `validation.rs` | Input validation for all API endpoints |
+| **HNSW** | `vector/hnsw.rs` | Core HNSW algorithm (insert, search, delete) |
+| **SIMD** | `vector/simd.rs` | WASM SIMD128 accelerated distance functions |
 
 ---
 
-## How It Works
+## Authentication
 
-### Request Flow
+QuartzDB supports two authentication modes:
 
-#### 1. **Client Request**
-```
-Client → Cloudflare Edge → QuartzDB Worker
-```
+### Legacy Mode (Admin / Dev)
 
-#### 2. **Router Processing**
-```rust
-// Worker receives request
-Router::new()
-    .post_async("/api/put", handler)
-    .get_async("/api/get/:key", handler)
-    .post_async("/vector/insert", handler)
-    .post_async("/vector/search", handler)
+Set the `QUARTZ_API_KEY` secret via Wrangler:
+
+```bash
+wrangler secret put QUARTZ_API_KEY
 ```
 
-#### 3. **Durable Object Interaction**
-```
-Worker → Get Durable Object Stub → Forward Request → Process → Return Response
-```
+Then include in requests:
 
-#### 4. **Analytics Tracking**
-```rust
-// Track metrics for every request
-RequestMetrics::new(method, path)
-    .with_duration(elapsed_ms)
-    .with_status(status_code)
-    .send_to_analytics(env)
+```bash
+curl -H "Authorization: Bearer YOUR_KEY" https://api.quartzdb.io/api/vector/stats
+# or
+curl -H "X-API-Key: YOUR_KEY" https://api.quartzdb.io/api/vector/stats
 ```
 
-### Data Flow Examples
+Legacy keys bypass tenant-level billing and usage limits.
 
-#### Key-Value Storage
+### Multi-Tenant Mode (SaaS)
 
-```
-1. Client sends: POST /api/put {"key": "user:123", "value": "John Doe"}
-2. Worker routes to StorageObject
-3. StorageObject:
-   - Updates in-memory cache
-   - Writes to Durable Storage (SQLite)
-4. Response: {"success": true, "key": "user:123"}
-```
+1. **Sign up** via `POST /api/tenants/signup` to get a `qdb_*` API key
+2. Include the key in requests (same headers as above)
+3. Each request is authenticated against KV, with billing and limits enforced
 
-#### Vector Search
-
-```
-1. Client sends: POST /vector/search {"query": [0.1, 0.2, ...], "k": 10}
-2. Worker routes to VectorIndexObject
-3. VectorIndexObject:
-   - Loads HNSW index from cache/storage
-   - Runs HNSW search algorithm:
-     a. Start at entry point (highest layer)
-     b. Greedily navigate to nearest neighbors per layer
-     c. Descend to layer 0
-     d. Return k nearest neighbors
-4. Response: {"results": [{id, score, metadata}...]}
-```
-
-### HNSW Algorithm Flow
-
-```
-Insert Vector:
-1. Generate random level (exponential distribution)
-2. Create node with connections at each layer
-3. Find entry point (top layer node)
-4. For each layer (top to bottom):
-   - Search for nearest neighbors
-   - Connect to M nearest nodes
-   - Add bidirectional edges
-   - Prune overconnected neighbors
-5. Update entry point if new node is highest
-
-Search Query:
-1. Start at entry point (top layer)
-2. For each layer (top to 1):
-   - Greedy search for single nearest neighbor
-   - Move to that neighbor
-3. At layer 0:
-   - Search for k nearest neighbors
-   - Use ef_search parameter for quality
-4. Return top k results by distance
-```
+**Public endpoints** (no auth required): `/`, `/health`  
+**Protected endpoints**: `/api/*` (except `/api/tenants/signup`)  
+**Webhook endpoints**: `/webhooks/stripe` (verified by Stripe signature)
 
 ---
 
 ## API Reference
+
+> **Base URL**: `https://api.quartzdb.io` (or your custom domain)  
+> All protected endpoints require an `Authorization: Bearer <key>` or `X-API-Key: <key>` header.
 
 ### Health Check
 
 **GET /health**
 
 ```bash
-curl https://your-worker.workers.dev/health
+curl https://api.quartzdb.io/health
 ```
 
-Response:
 ```json
 {
   "status": "healthy",
   "service": "quartz-faas",
   "version": "0.1.0",
-  "uptime_seconds": 123456,
+  "uptime_seconds": 12345,
   "checks": {
     "storage": "ok",
     "vector_index": "ok"
@@ -274,140 +247,166 @@ Response:
 
 ### Key-Value Storage
 
-#### Store Value
-
-**POST /api/put**
+#### Store Value — `POST /api/put`
 
 ```bash
-curl -X POST https://your-worker.workers.dev/api/put \
+curl -X POST https://api.quartzdb.io/api/put \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"key": "user:123", "value": "John Doe"}'
 ```
 
-Response:
-```json
-{
-  "success": true,
-  "key": "user:123",
-  "message": "Value stored successfully"
-}
-```
-
-#### Retrieve Value
-
-**GET /api/get/:key**
+#### Retrieve Value — `GET /api/get/:key`
 
 ```bash
-curl https://your-worker.workers.dev/api/get/user:123
+curl -H "Authorization: Bearer $API_KEY" \
+  https://api.quartzdb.io/api/get/user:123
 ```
 
-Response:
-```json
-{
-  "success": true,
-  "key": "user:123",
-  "value": "John Doe",
-  "source": "cache"
-}
-```
-
-#### Delete Value
-
-**DELETE /api/delete/:key**
+#### Delete Value — `DELETE /api/delete/:key`
 
 ```bash
-curl -X DELETE https://your-worker.workers.dev/api/delete/user:123
+curl -X DELETE -H "Authorization: Bearer $API_KEY" \
+  https://api.quartzdb.io/api/delete/user:123
 ```
 
-### Vector Search
+### Vector Operations
 
-#### Insert Vector
-
-**POST /vector/insert**
+#### Insert Vector — `POST /api/vector/insert`
 
 ```bash
-curl -X POST https://your-worker.workers.dev/vector/insert \
+curl -X POST https://api.quartzdb.io/api/vector/insert \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "id": 123,
-    "vector": [0.1, 0.2, 0.3, ...],
+    "id": "doc-001",
+    "vector": [0.1, 0.2, 0.3, 0.4],
     "metadata": {"title": "Document 1", "category": "tech"}
   }'
 ```
 
-Response:
 ```json
-{
-  "success": true,
-  "id": 123,
-  "message": "Vector inserted successfully"
-}
+{"success": true, "id": "doc-001", "message": "Vector inserted successfully"}
 ```
 
-#### Search Vectors
-
-**POST /vector/search**
+#### Batch Insert — `POST /api/vector/batch-insert`
 
 ```bash
-curl -X POST https://your-worker.workers.dev/vector/search \
+curl -X POST https://api.quartzdb.io/api/vector/batch-insert \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": [0.1, 0.2, 0.3, ...],
-    "k": 10
+    "vectors": [
+      {"id": "doc-001", "vector": [0.1, 0.2, 0.3, 0.4]},
+      {"id": "doc-002", "vector": [0.5, 0.6, 0.7, 0.8]}
+    ]
   }'
 ```
 
-Response:
+```json
+{"success": true, "inserted": 2}
+```
+
+Maximum batch size: **100 vectors**.
+
+#### Search Vectors — `POST /api/vector/search`
+
+```bash
+curl -X POST https://api.quartzdb.io/api/vector/search \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"vector": [0.1, 0.2, 0.3, 0.4], "k": 10}'
+```
+
 ```json
 {
-  "success": true,
-  "algorithm": "HNSW",
   "results": [
-    {
-      "id": 123,
-      "distance": 0.05,
-      "score": 0.95,
-      "metadata": {"title": "Document 1"}
-    }
+    {"id": "doc-001", "score": 0.95, "metadata": {"title": "Document 1"}}
   ]
 }
 ```
 
-#### Get Statistics
+The `k` field is optional (defaults to 10). Results are merged from all shards and ranked by score.
 
-**GET /vector/stats**
+#### Get Vector — `GET /api/vector/get/:id`
 
 ```bash
-curl https://your-worker.workers.dev/vector/stats
+curl -H "Authorization: Bearer $API_KEY" \
+  https://api.quartzdb.io/api/vector/get/doc-001
 ```
 
-Response:
+#### Delete Vector (soft-delete) — `DELETE /api/vector/delete/:id`
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $API_KEY" \
+  https://api.quartzdb.io/api/vector/delete/doc-001
+```
+
+#### Index Statistics — `GET /api/vector/stats`
+
+```bash
+curl -H "Authorization: Bearer $API_KEY" \
+  https://api.quartzdb.io/api/vector/stats
+```
+
 ```json
 {
-  "algorithm": "HNSW",
-  "num_vectors": 10000,
-  "num_nodes": 10000,
-  "dimension": 384,
-  "entry_point_level": 4,
-  "connections_per_layer": [32000, 8000, 2000, 500, 125]
+  "total_document_count": 5000,
+  "total_vector_count": 5000,
+  "total_storage_bytes": 2048000,
+  "shard_count": 4,
+  "shards": [
+    {"shard_id": 0, "shard_name": "vector-index-0", "stats": {...}}
+  ]
 }
 ```
 
-#### Configure HNSW
+### Tenant & Billing
 
-**POST /vector/config**
+#### Sign Up — `POST /api/tenants/signup`
 
 ```bash
-curl -X POST https://your-worker.workers.dev/vector/config \
+curl -X POST https://api.quartzdb.io/api/tenants/signup \
   -H "Content-Type: application/json" \
-  -d '{
-    "dimension": 384,
-    "metric": "cosine",
-    "max_connections": 16,
-    "ef_construction": 200,
-    "ef_search": 100
-  }'
+  -d '{"tenant_id": "my-project"}'
 ```
+
+```json
+{
+  "success": true,
+  "tenant_id": "my-project",
+  "api_key": "qdb_a1b2c3d4e5f6...",
+  "plan": "free",
+  "vector_limit": 1000,
+  "query_limit_per_month": 10000,
+  "message": "Save your API key - it will not be shown again!"
+}
+```
+
+> **Important**: The API key is shown only once. It is stored as a SHA-256 hash.
+
+#### Usage — `GET /api/usage`
+
+Requires a `qdb_*` API key.
+
+```bash
+curl -H "Authorization: Bearer qdb_..." \
+  https://api.quartzdb.io/api/usage
+```
+
+```json
+{
+  "success": true,
+  "tenant_id": "my-project",
+  "plan": "Free",
+  "usage": {"queries": 42, "inserts": 100, "vectors_stored": 100, "month": "2026-04"},
+  "limits": {"vector_limit": 1000, "query_limit_per_month": 10000}
+}
+```
+
+#### Stripe Webhook — `POST /webhooks/stripe`
+
+Handles `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted` events. Verified via HMAC-SHA256 signature.
 
 ---
 
@@ -417,11 +416,10 @@ curl -X POST https://your-worker.workers.dev/vector/config \
 
 **Hierarchical Navigable Small World** is a graph-based algorithm for approximate nearest neighbor search.
 
-**Key Characteristics:**
-- **Multi-layer Graph:** Higher layers for coarse navigation, layer 0 for fine-grained search
-- **Greedy Search:** Navigate to nearest neighbor at each step
-- **Complexity:** O(log n) for both insert and search
-- **Accuracy:** Highly accurate with tunable parameters
+- **Multi-layer graph**: Higher layers for coarse navigation, layer 0 for fine-grained search
+- **Greedy search**: Navigate to nearest neighbor at each step
+- **Complexity**: O(log n) for both insert and search
+- **Accuracy**: Highly accurate with tunable parameters
 
 ### Configuration Parameters
 
@@ -429,43 +427,58 @@ curl -X POST https://your-worker.workers.dev/vector/config \
 |-----------|-------------|---------|--------|
 | `M` | Connections per node (layers 1+) | 16 | Higher = better recall, slower |
 | `M₀` | Connections per node (layer 0) | 32 | Usually 2×M |
-| `ef_construction` | Neighbors explored during insert | 200 | Higher = better graph, slower insert |
-| `ef_search` | Neighbors explored during search | 100 | Higher = better recall, slower search |
-
-### Performance Tuning
-
-**For Speed:**
-```json
-{
-  "max_connections": 8,
-  "ef_construction": 100,
-  "ef_search": 50
-}
-```
-
-**For Accuracy:**
-```json
-{
-  "max_connections": 32,
-  "ef_construction": 400,
-  "ef_search": 200
-}
-```
-
-**Balanced (Default):**
-```json
-{
-  "max_connections": 16,
-  "ef_construction": 200,
-  "ef_search": 100
-}
-```
+| `ef_construction` | Neighbors explored during insert | 200 | Higher = better graph quality |
+| `ef_search` | Neighbors explored during search | 100 | Higher = better recall |
 
 ### Distance Metrics
 
-- **Cosine Similarity** - Best for normalized embeddings (default)
-- **Euclidean (L2)** - Geometric distance
-- **Dot Product** - Raw similarity score
+| Metric | Best For | Range |
+|--------|----------|-------|
+| **Cosine** (default) | Normalized embeddings (OpenAI, Cohere) | [0, 2] |
+| **Euclidean (L2)** | Geometric distance | [0, ∞) |
+| **Dot Product** | Raw similarity score | (-∞, ∞) |
+
+### Performance Characteristics
+
+- **Insert**: O(log n) — ~1ms per vector
+- **Search**: O(log n) — 1-5ms for 100K vectors
+- **Memory**: ~1KB per vector (384-dim) including graph edges
+- **Soft Delete**: O(1) — marks node as deleted, excluded from search results
+
+---
+
+## Multi-Tenant SaaS
+
+### Pricing Plans
+
+| Plan | Price | Vectors | Queries/Month |
+|------|-------|---------|---------------|
+| **Free** | $0 | 1,000 | 10,000 |
+| **Pro** | $29/mo | 100,000 | 100,000 |
+| **Scale** | $99/mo | 1,000,000 | Unlimited |
+
+### Billing Flow
+
+1. User signs up via `POST /api/tenants/signup` → Free tier
+2. User upgrades via Stripe Checkout (set `client_reference_id` to tenant ID)
+3. Stripe sends `checkout.session.completed` webhook → plan upgraded to Pro/Scale
+4. Subscription changes (`updated`/`deleted`) propagate via webhook
+
+### Usage Tracking
+
+- Per-tenant monthly counters stored in KV (`usage:{tenant_id}:{YYYY-MM}`)
+- Query limits checked **before** search (returns 429 if exceeded)
+- Insert counts tracked **after** successful insertion
+- Records auto-expire after 90 days
+
+### KV Schema
+
+| Key Pattern | Value | Purpose |
+|-------------|-------|---------|
+| `apikey:{sha256_hash}` | TenantInfo JSON | API key → tenant lookup |
+| `tenant:{tenant_id}` | TenantInfo JSON | Tenant ID → tenant lookup |
+| `stripe:{customer_id}` | `tenant_id` string | Stripe → tenant reverse mapping |
+| `usage:{tenant_id}:{YYYY-MM}` | UsageRecord JSON | Monthly counters |
 
 ---
 
@@ -473,114 +486,126 @@ curl -X POST https://your-worker.workers.dev/vector/config \
 
 ### Prerequisites
 
-- Rust 1.70+ (`rustup install stable`)
-- Node.js 18+ (`node --version`)
+- Rust 1.89+ with `wasm32-unknown-unknown` target
+- Node.js 18+ (for dashboard)
 - Wrangler CLI (`npm install -g wrangler`)
 
 ### Local Development
 
 ```bash
-# Clone repository
-git clone <repo-url>
-cd QuartzDB/quartz-faas
-
-# Install dependencies
-cargo build
-
-# Run locally with Miniflare
+# Backend
+cd quartz-faas
+cargo build --target wasm32-unknown-unknown
 wrangler dev
 
-# Test endpoints
-curl http://localhost:8787/health
+# Dashboard
+cd quartz-dashboard
+npm install
+npm run dev
 ```
 
 ### Running Tests
 
 ```bash
-# Unit tests
+# All Rust tests (cross-platform, no WASM target needed)
 cargo test
 
-# Integration tests
+# Integration tests (requires running worker)
 wrangler dev &
-python examples/simple_vector_demo.py
+bash tests/smoke_test.sh
+bash tests/quick_test.sh
 ```
 
-### Building for Production
-
-```bash
-# Optimize build
-wrangler build
-
-# Check bundle size
-ls -lh build/
-# Expected: ~700KB total, ~270KB gzipped
-```
+The test suite includes **98+ tests** covering:
+- HNSW algorithm (insert, search, delete, serialization, all metrics)
+- Billing (usage keys, monthly formatting, HMAC verification)
+- Validation (all input validators, edge cases)
+- Monitoring (timer, metrics lifecycle)
+- Platform (SHA-256, HMAC-SHA256, time, random)
+- Tenant (key generation, plan limits)
+- Timeout (creation, expiry, check)
+- Auth (key extraction, path protection)
 
 ---
 
 ## Deployment
 
-### Deploy to Cloudflare Workers
+### 1. Configure Secrets
 
 ```bash
-# Login to Cloudflare
-wrangler login
-
-# Deploy to production
 cd quartz-faas
+
+# Set API key for admin access
+wrangler secret put QUARTZ_API_KEY
+
+# Set Stripe webhook secret
+wrangler secret put STRIPE_WEBHOOK_SECRET
+```
+
+### 2. Create KV Namespace
+
+```bash
+# Development
+wrangler kv:namespace create "TENANT_KV"
+# → Copy the id into wrangler.toml [[kv_namespaces]] id = "..."
+
+# Production
+wrangler kv:namespace create "TENANT_KV" --env production
+# → Copy the id into [[env.production.kv_namespaces]] id = "..."
+```
+
+### 3. Deploy
+
+```bash
+# Development
 wrangler deploy
 
-# Output:
-# ✨ Published quartz-faas
-# https://quartz-faas.<your-subdomain>.workers.dev
+# Production
+wrangler deploy --env production
 ```
 
-### Configure Durable Objects
+### 4. Verify
 
-Ensure `wrangler.toml` has:
+```bash
+curl https://api.quartzdb.io/health
+```
+
+### wrangler.toml Key Settings
 
 ```toml
-[[durable_objects.bindings]]
-name = "STORAGE"
-class_name = "StorageObject"
-script_name = "quartz-faas"
-
-[[durable_objects.bindings]]
-name = "VECTOR_INDEX"
-class_name = "VectorIndexObject"
-script_name = "quartz-faas"
-```
-
-### Monitor Performance
-
-View analytics at:
-```
-https://dash.cloudflare.com → Workers → quartz-faas → Analytics
+# Production CORS (restricts to dashboard origin)
+[env.production.vars]
+CORS_ALLOWED_ORIGIN = "https://dashboard.quartzdb.io"
 ```
 
 ---
 
-## Advanced Topics
+## Security
 
-### Scaling Considerations
+### Authentication
 
-- **Durable Objects:** Each DO instance handles up to ~1000 RPS
-- **Multiple Instances:** Use different DO names for sharding
-- **Vector Index Size:** ~100MB per 100K vectors (384-dim)
-- **Cold Start:** First request ~50-100ms, subsequent <1ms
+- **API keys** sent via `Authorization: Bearer` or `X-API-Key` header
+- Multi-tenant keys (`qdb_*`) are **SHA-256 hashed** before KV storage — raw keys are never persisted
+- Stripe webhook signatures verified with **HMAC-SHA256** (RFC 2104) + **constant-time comparison**
+- Webhook timestamps checked for **5-minute freshness** to prevent replay attacks
 
-### Backup and Recovery
+### Rate Limiting
 
-Durable Objects automatically persist to disk:
-- **SQLite Storage:** Replicated to 3+ regions
-- **No Manual Backups:** Handled by Cloudflare
-- **Export Data:** Use LIST endpoint for manual export
+- **Cloudflare native rate limiting** at the edge (per-IP, configured in dashboard)
+- **Per-tenant monthly usage limits** enforced in the Worker (returns 429 when exceeded)
 
-### Security
+### CORS
 
-- **Authentication:** Add Cloudflare Access or custom middleware
-- **Rate Limiting:** Use Cloudflare Rate Limiting rules
-- **CORS:** Configure in worker router if needed
+- Development: `Access-Control-Allow-Origin: *`
+- Production: Restricted to `CORS_ALLOWED_ORIGIN` env var (e.g. `https://dashboard.quartzdb.io`)
+
+### Input Validation
+
+All user inputs are validated before processing:
+- Vector dimensions (1–4096, must be consistent)
+- Search `k` parameter (1–1000)
+- Batch size (1–100 vectors)
+- Tenant ID format (alphanumeric + `_` `-`, max 64 chars)
 
 ---
 
@@ -588,33 +613,21 @@ Durable Objects automatically persist to disk:
 
 ### Common Issues
 
-**"CPU time limit exceeded"**
-- HNSW search is CPU-intensive
-- Solution: Lower `ef_search` or upgrade to Workers Paid plan
+**"CPU time limit exceeded"**  
+HNSW search is CPU-intensive. Lower `ef_search` or upgrade to Workers Paid plan.
 
-**"Durable Object not found"**
-- Check `wrangler.toml` bindings
-- Ensure DO migrations are published
+**"Usage limit exceeded" (429)**  
+Tenant has hit their monthly query quota. Upgrade plan at `/pricing`.
 
-**"Vector dimension mismatch"**
-- All vectors must have same dimension
-- Reconfigure index with correct dimension
+**"Unauthorized: Invalid or missing API key" (401)**  
+Check that your API key is included in headers and is valid.
 
-### Debug Mode
+**"Vector dimension mismatch"**  
+All vectors in an index must have the same dimension. Check your embedding model output.
 
-```bash
-# Run with verbose logging
-RUST_LOG=debug wrangler dev
-```
+**"Batch too large"**  
+Maximum 100 vectors per batch-insert request.
 
 ---
 
-## Support
-
-- **Documentation:** See `docs/` folder
-- **Issues:** GitHub Issues
-- **Community:** Cloudflare Workers Discord
-
----
-
-**Happy Building! 🚀**
+**Happy Building!**

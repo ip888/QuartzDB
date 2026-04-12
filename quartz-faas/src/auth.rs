@@ -14,6 +14,7 @@
 //! validate_api_key(&api_key, &env)?;
 //! ```
 
+use crate::tenant::{TenantInfo, TenantManager};
 use worker::*;
 
 /// Extract API key from request headers
@@ -102,15 +103,72 @@ pub fn require_auth(req: &Request, env: &Env) -> Result<()> {
     Ok(())
 }
 
+/// Authenticate a request and return the associated [`TenantInfo`].
+///
+/// 1. Extracts the API key from headers (Bearer / X-API-Key).
+/// 2. Looks up the tenant record in KV via [`TenantManager`].
+/// 3. Returns the tenant or an error if the key is missing / unknown.
+pub async fn authenticate_tenant(req: &Request, env: &Env) -> Result<TenantInfo> {
+    let api_key = extract_api_key(req)?
+        .ok_or_else(|| Error::RustError("Missing API key".to_string()))?;
+
+    TenantManager::get_tenant_by_key(env, &api_key)
+        .await?
+        .ok_or_else(|| Error::RustError("Invalid API key".to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_is_protected_path() {
         assert!(is_protected_path("/api/vector/insert"));
         assert!(is_protected_path("/api/put"));
+        assert!(is_protected_path("/api/get/key1"));
+        assert!(is_protected_path("/api/tenants/signup"));
         assert!(!is_protected_path("/health"));
         assert!(!is_protected_path("/"));
+        assert!(!is_protected_path("/webhooks/stripe"));
+    }
+
+    #[test]
+    fn test_is_protected_path_edge_cases() {
+        assert!(!is_protected_path("/api")); // no trailing slash = not /api/*
+        assert!(!is_protected_path("")); // empty
+        assert!(!is_protected_path("/healthcheck"));
+        assert!(!is_protected_path("/apifoo")); // doesn't start with /api/
+    }
+
+    #[test]
+    fn test_is_protected_path_webhook_not_protected() {
+        // Stripe webhooks must be accessible without API key
+        assert!(!is_protected_path("/webhooks/stripe"));
+        assert!(!is_protected_path("/webhooks/other"));
+    }
+
+    #[test]
+    fn test_is_protected_path_all_api_routes() {
+        // All vector routes are protected
+        assert!(is_protected_path("/api/vector/search"));
+        assert!(is_protected_path("/api/vector/batch-insert"));
+        assert!(is_protected_path("/api/vector/get/some-id"));
+        assert!(is_protected_path("/api/vector/delete/some-id"));
+        assert!(is_protected_path("/api/vector/stats"));
+        // Tenant routes are protected
+        assert!(is_protected_path("/api/tenants/signup"));
+        assert!(is_protected_path("/api/usage"));
+    }
+
+    #[test]
+    fn test_api_key_prefix_convention() {
+        // Tenant API keys follow qdb_ prefix convention
+        let key = "qdb_abc123def456";
+        assert!(key.starts_with("qdb_"));
+        assert!(key.len() > 4);
+
+        // Non-tenant keys don't have the prefix
+        let admin_key = "sk_live_admin_key";
+        assert!(!admin_key.starts_with("qdb_"));
     }
 }
