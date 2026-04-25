@@ -195,7 +195,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     // Handle CORS preflight
     if method == "OPTIONS" {
         return Response::ok("")
-            .map(|r| add_cors_headers_with_origin(r, &cors_origin));
+            .map(|r| finalize_response(r, &cors_origin, &request_id));
     }
     
     // Reject oversized request bodies to prevent memory exhaustion
@@ -207,7 +207,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 let _ = metrics.track(&env_clone);
                 
                 return Response::error("Request body too large (max 1MB)", 413)
-                    .map(|r| add_cors_headers(r));
+                    .map(|r| finalize_response(r, &cors_origin, &request_id));
             }
         }
     }
@@ -221,7 +221,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             
             return Response::error("Too Many Requests", 429)
                 .map(|r| {
-                    let mut r = add_cors_headers_with_origin(r, &cors_origin);
+                    let mut r = finalize_response(r, &cors_origin, &request_id);
                     let _ = r.headers_mut().set("Retry-After", "60");
                     r
                 });
@@ -242,7 +242,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                     metrics.log();
                     let _ = metrics.track(&env_clone);
                     return Response::error("Unauthorized: Invalid or missing API key", 401)
-                        .map(|r| add_cors_headers_with_origin(r, &cors_origin));
+                        .map(|r| finalize_response(r, &cors_origin, &request_id));
                 }
             }
             Some(_) => {
@@ -253,7 +253,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 metrics.log();
                 let _ = metrics.track(&env_clone);
                 return Response::error("Unauthorized: Missing API key", 401)
-                    .map(|r| add_cors_headers_with_origin(r, &cors_origin));
+                    .map(|r| finalize_response(r, &cors_origin, &request_id));
             }
         }
     }
@@ -747,11 +747,17 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let _ = metrics.track(&env_clone);
 
     // Add CORS/security headers and X-Request-ID to all responses
-    response.map(|r| {
-        let mut r = add_cors_headers_with_origin(r, &cors_origin);
-        let _ = r.headers_mut().set("X-Request-ID", &request_id);
-        r
-    })
+    response.map(|r| finalize_response(r, &cors_origin, &request_id))
+}
+
+/// Apply all response headers (CORS, security, tracing) to a response.
+///
+/// Single helper used by all code paths — early returns and the final router
+/// response — so every response carries a consistent set of headers.
+fn finalize_response(response: Response, cors_origin: &str, request_id: &str) -> Response {
+    let mut r = add_cors_headers_with_origin(response, cors_origin);
+    let _ = r.headers_mut().set("X-Request-ID", request_id);
+    r
 }
 
 /// Legacy CORS wrapper — intentional no-op
@@ -779,6 +785,7 @@ fn add_cors_headers_with_origin(mut response: Response, allowed_origin: &str) ->
         "Content-Type, Authorization, X-API-Key, X-Request-ID"
     );
     let _ = headers.set("Access-Control-Max-Age", "86400");
+    let _ = headers.set("Access-Control-Expose-Headers", "X-Request-ID");
     
     // Security headers
     let _ = headers.set("X-Content-Type-Options", "nosniff");
