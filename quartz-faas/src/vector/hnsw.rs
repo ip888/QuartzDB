@@ -301,14 +301,16 @@ impl HnswIndex {
                 
                 // Add reverse link - need to handle pruning separately to avoid borrow issues
                 if let Some(neighbor_node) = self.nodes.get_mut(neighbor_id) {
-                    neighbor_node.connections[lc].insert(id.clone());
+                    if lc < neighbor_node.connections.len() {
+                        neighbor_node.connections[lc].insert(id.clone());
+                    }
                 }
             }
 
             // Prune overconnected neighbors (do this after all inserts to avoid borrow conflicts)
             for neighbor_id in &neighbors {
                 if let Some(neighbor_node) = self.nodes.get(neighbor_id) {
-                    if neighbor_node.connections[lc].len() > m {
+                    if lc < neighbor_node.connections.len() && neighbor_node.connections[lc].len() > m {
                         let pruned = self.prune_connections(neighbor_id, lc, m)?;
                         if let Some(neighbor_node_mut) = self.nodes.get_mut(neighbor_id) {
                             neighbor_node_mut.connections[lc] = pruned.into_iter().collect();
@@ -732,7 +734,7 @@ impl HnswIndex {
     /// for WASM compatibility.
     fn random_level(&self) -> usize {
         // Use js_sys for WASM-compatible random number generation
-        let random = js_sys::Math::random();
+        let random = crate::platform::random_f64();
         // Exponential distribution: -ln(U) × mL where U ~ Uniform(0,1)
         let level = (-random.ln() * self.config.level_multiplier).floor() as usize;
         // Cap at 10 layers to prevent excessive memory usage
@@ -831,5 +833,353 @@ impl PartialOrd for OrderedFloat {
 impl Ord for OrderedFloat {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_index(dim: usize) -> HnswIndex {
+        HnswIndex::new(dim, DistanceMetric::Euclidean)
+    }
+
+    // ---- construction ----
+
+    #[test]
+    fn test_new_index_is_empty() {
+        let idx = make_index(4);
+        let stats = idx.stats();
+        assert_eq!(stats.num_vectors, 0);
+        assert_eq!(stats.num_active, 0);
+        assert_eq!(stats.num_deleted, 0);
+        assert_eq!(stats.dimension, 4);
+    }
+
+    #[test]
+    fn test_with_config() {
+        let cfg = HnswConfig::fast();
+        let idx = HnswIndex::with_config(3, DistanceMetric::Cosine, cfg);
+        assert_eq!(idx.dimension, 3);
+        assert_eq!(idx.config.max_connections, 8);
+    }
+
+    // ---- insert ----
+
+    #[test]
+    fn test_insert_single() {
+        let mut idx = make_index(3);
+        idx.insert("a".into(), vec![1.0, 0.0, 0.0], None).unwrap();
+        assert!(idx.contains("a"));
+        assert_eq!(idx.stats().num_vectors, 1);
+        assert_eq!(idx.stats().num_active, 1);
+    }
+
+    #[test]
+    fn test_insert_dimension_mismatch() {
+        let mut idx = make_index(3);
+        let err = idx.insert("a".into(), vec![1.0, 2.0], None);
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("dimension mismatch"));
+    }
+
+    #[test]
+    fn test_insert_with_metadata() {
+        let mut idx = make_index(2);
+        let meta = serde_json::json!({"color": "red"});
+        idx.insert("v1".into(), vec![1.0, 2.0], Some(meta.clone())).unwrap();
+        let (_, retrieved_meta) = idx.get("v1").unwrap();
+        assert_eq!(retrieved_meta.unwrap(), meta);
+    }
+
+    #[test]
+    fn test_insert_many() {
+        let mut idx = make_index(4);
+        for i in 0..100 {
+            let v = vec![i as f32, 0.0, 0.0, 0.0];
+            idx.insert(format!("v{i}"), v, None).unwrap();
+        }
+        assert_eq!(idx.stats().num_vectors, 100);
+        assert_eq!(idx.stats().num_active, 100);
+    }
+
+    // ---- get / contains ----
+
+    #[test]
+    fn test_get_existing() {
+        let mut idx = make_index(2);
+        idx.insert("x".into(), vec![3.0, 4.0], None).unwrap();
+        let (vec, _) = idx.get("x").unwrap();
+        assert_eq!(vec, vec![3.0, 4.0]);
+    }
+
+    #[test]
+    fn test_get_missing() {
+        let idx = make_index(2);
+        assert!(idx.get("nope").is_none());
+    }
+
+    #[test]
+    fn test_contains() {
+        let mut idx = make_index(2);
+        idx.insert("yes".into(), vec![1.0, 1.0], None).unwrap();
+        assert!(idx.contains("yes"));
+        assert!(!idx.contains("no"));
+    }
+
+    // ---- search ----
+
+    #[test]
+    fn test_search_empty_index() {
+        let idx = make_index(3);
+        let results = idx.search(&[1.0, 0.0, 0.0], 5).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_search_dimension_mismatch() {
+        let mut idx = make_index(3);
+        idx.insert("a".into(), vec![1.0, 0.0, 0.0], None).unwrap();
+        let err = idx.search(&[1.0, 0.0], 5);
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_search_finds_nearest() {
+        let mut idx = make_index(2);
+        idx.insert("close".into(), vec![1.0, 0.0], None).unwrap();
+        idx.insert("far".into(), vec![100.0, 100.0], None).unwrap();
+
+        let results = idx.search(&[1.1, 0.0], 1).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "close");
+    }
+
+    #[test]
+    fn test_search_k_greater_than_size() {
+        let mut idx = make_index(2);
+        idx.insert("a".into(), vec![1.0, 0.0], None).unwrap();
+        idx.insert("b".into(), vec![0.0, 1.0], None).unwrap();
+
+        let results = idx.search(&[0.5, 0.5], 10).unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_search_returns_metadata() {
+        let mut idx = make_index(2);
+        let meta = serde_json::json!({"tag": "important"});
+        idx.insert("m".into(), vec![1.0, 0.0], Some(meta.clone())).unwrap();
+
+        let results = idx.search(&[1.0, 0.0], 1).unwrap();
+        assert_eq!(results[0].metadata, Some(meta));
+    }
+
+    #[test]
+    fn test_search_ordering() {
+        let mut idx = make_index(2);
+        idx.insert("near".into(), vec![1.0, 0.0], None).unwrap();
+        idx.insert("mid".into(), vec![5.0, 0.0], None).unwrap();
+        idx.insert("far".into(), vec![10.0, 0.0], None).unwrap();
+
+        let results = idx.search(&[0.0, 0.0], 3).unwrap();
+        // Distances should be non-decreasing
+        for w in results.windows(2) {
+            assert!(w[0].distance <= w[1].distance, "results not sorted by distance");
+        }
+    }
+
+    // ---- cosine metric ----
+
+    #[test]
+    fn test_cosine_search() {
+        let mut idx = HnswIndex::new(3, DistanceMetric::Cosine);
+        // Same direction, different magnitudes
+        idx.insert("a".into(), vec![1.0, 0.0, 0.0], None).unwrap();
+        idx.insert("b".into(), vec![0.0, 1.0, 0.0], None).unwrap();
+
+        let results = idx.search(&[2.0, 0.0, 0.0], 1).unwrap();
+        assert_eq!(results[0].id, "a"); // same direction
+    }
+
+    // ---- dot product metric ----
+
+    #[test]
+    fn test_dot_product_search() {
+        let mut idx = HnswIndex::new(2, DistanceMetric::DotProduct);
+        idx.insert("high".into(), vec![10.0, 10.0], None).unwrap();
+        idx.insert("low".into(), vec![0.1, 0.1], None).unwrap();
+
+        let results = idx.search(&[1.0, 1.0], 1).unwrap();
+        // "high" has larger dot product → smaller distance (negated)
+        assert_eq!(results[0].id, "high");
+    }
+
+    // ---- soft delete ----
+
+    #[test]
+    fn test_soft_delete() {
+        let mut idx = make_index(2);
+        idx.insert("d".into(), vec![1.0, 0.0], None).unwrap();
+        assert!(idx.soft_delete("d").unwrap()); // true = was active
+        assert!(!idx.contains("d")); // no longer visible
+        assert!(idx.get("d").is_none());
+        assert_eq!(idx.stats().num_deleted, 1);
+        assert_eq!(idx.stats().num_active, 0);
+    }
+
+    #[test]
+    fn test_soft_delete_already_deleted() {
+        let mut idx = make_index(2);
+        idx.insert("d".into(), vec![1.0, 0.0], None).unwrap();
+        idx.soft_delete("d").unwrap();
+        assert!(!idx.soft_delete("d").unwrap()); // false = already deleted
+    }
+
+    #[test]
+    fn test_soft_delete_not_found() {
+        let mut idx = make_index(2);
+        assert!(idx.soft_delete("ghost").is_err());
+    }
+
+    #[test]
+    fn test_soft_delete_excluded_from_search() {
+        let mut idx = make_index(2);
+        idx.insert("alive".into(), vec![1.0, 0.0], None).unwrap();
+        idx.insert("dead".into(), vec![1.1, 0.0], None).unwrap();
+        idx.soft_delete("dead").unwrap();
+
+        let results = idx.search(&[1.0, 0.0], 10).unwrap();
+        assert!(results.iter().all(|r| r.id != "dead"));
+        assert_eq!(results.len(), 1);
+    }
+
+    // ---- undelete ----
+
+    #[test]
+    fn test_undelete() {
+        let mut idx = make_index(2);
+        idx.insert("u".into(), vec![1.0, 0.0], None).unwrap();
+        idx.soft_delete("u").unwrap();
+        assert!(!idx.contains("u"));
+
+        assert!(idx.undelete("u").unwrap()); // true = was deleted
+        assert!(idx.contains("u"));
+        assert_eq!(idx.stats().num_active, 1);
+        assert_eq!(idx.stats().num_deleted, 0);
+    }
+
+    #[test]
+    fn test_undelete_already_active() {
+        let mut idx = make_index(2);
+        idx.insert("u".into(), vec![1.0, 0.0], None).unwrap();
+        assert!(!idx.undelete("u").unwrap()); // false = already active
+    }
+
+    #[test]
+    fn test_undelete_not_found() {
+        let mut idx = make_index(2);
+        assert!(idx.undelete("ghost").is_err());
+    }
+
+    // ---- stats ----
+
+    #[test]
+    fn test_stats_comprehensive() {
+        let mut idx = make_index(3);
+        for i in 0..20 {
+            idx.insert(format!("v{i}"), vec![i as f32, 0.0, 0.0], None).unwrap();
+        }
+        idx.soft_delete("v0").unwrap();
+        idx.soft_delete("v1").unwrap();
+
+        let stats = idx.stats();
+        assert_eq!(stats.num_vectors, 20);
+        assert_eq!(stats.num_active, 18);
+        assert_eq!(stats.num_deleted, 2);
+        assert_eq!(stats.dimension, 3);
+        // Layer 0 should have connections
+        assert!(stats.connections_per_layer[0] > 0);
+    }
+
+    // ---- serialization round-trip ----
+
+    #[test]
+    fn test_serialization_roundtrip() {
+        let mut idx = make_index(3);
+        idx.insert("a".into(), vec![1.0, 2.0, 3.0], Some(serde_json::json!({"k": "v"}))).unwrap();
+        idx.insert("b".into(), vec![4.0, 5.0, 6.0], None).unwrap();
+
+        let json = serde_json::to_string(&idx).unwrap();
+        let restored: HnswIndex = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.stats().num_vectors, 2);
+        assert!(restored.contains("a"));
+        assert!(restored.contains("b"));
+        let (vec_a, meta_a) = restored.get("a").unwrap();
+        assert_eq!(vec_a, vec![1.0, 2.0, 3.0]);
+        assert_eq!(meta_a.unwrap(), serde_json::json!({"k": "v"}));
+    }
+
+    // ---- config presets ----
+
+    #[test]
+    fn test_config_fast() {
+        let cfg = HnswConfig::fast();
+        assert_eq!(cfg.max_connections, 8);
+        assert_eq!(cfg.max_connections_layer0, 16);
+        assert_eq!(cfg.ef_construction, 100);
+        assert_eq!(cfg.ef_search, 50);
+    }
+
+    #[test]
+    fn test_config_high_quality() {
+        let cfg = HnswConfig::high_quality();
+        assert_eq!(cfg.max_connections, 32);
+        assert_eq!(cfg.max_connections_layer0, 64);
+        assert_eq!(cfg.ef_construction, 400);
+        assert_eq!(cfg.ef_search, 200);
+    }
+
+    // ---- edge cases ----
+
+    #[test]
+    fn test_single_element_search() {
+        let mut idx = make_index(2);
+        idx.insert("only".into(), vec![5.0, 5.0], None).unwrap();
+        let results = idx.search(&[0.0, 0.0], 1).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "only");
+    }
+
+    #[test]
+    fn test_search_exact_match() {
+        let mut idx = make_index(3);
+        idx.insert("exact".into(), vec![1.0, 2.0, 3.0], None).unwrap();
+        let results = idx.search(&[1.0, 2.0, 3.0], 1).unwrap();
+        assert_eq!(results[0].id, "exact");
+        assert!(results[0].distance < 0.001);
+    }
+
+    #[test]
+    fn test_normalize_zero_vector() {
+        // Verify zero vector doesn't cause NaN/panic in cosine mode
+        let mut idx = HnswIndex::new(3, DistanceMetric::Cosine);
+        // Insert should succeed even for zero vector (gets stored as-is)
+        idx.insert("zero".into(), vec![0.0, 0.0, 0.0], None).unwrap();
+        assert!(idx.contains("zero"));
+    }
+
+    #[test]
+    fn test_search_with_zero_vector_no_nan() {
+        let mut idx = HnswIndex::new(3, DistanceMetric::Cosine);
+        idx.insert("zero".into(), vec![0.0, 0.0, 0.0], None).unwrap();
+        idx.insert("normal".into(), vec![1.0, 0.0, 0.0], None).unwrap();
+
+        // Search with zero query should not panic or produce NaN distances
+        let results = idx.search(&[0.0, 0.0, 0.0], 2).unwrap();
+        for r in &results {
+            assert!(!r.distance.is_nan(), "distance must not be NaN");
+        }
     }
 }

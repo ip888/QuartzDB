@@ -35,6 +35,9 @@ export default function HomePage() {
               <span className="text-2xl font-bold">QuartzDB</span>
             </div>
             <nav className="flex items-center gap-6">
+              <Link href="/pricing" className="text-gray-300 hover:text-white transition">
+                Pricing
+              </Link>
               <Link href="/docs" className="text-gray-300 hover:text-white transition">
                 Docs
               </Link>
@@ -42,10 +45,10 @@ export default function HomePage() {
                 Playground
               </Link>
               <Link 
-                href="/dashboard" 
+                href="/signup" 
                 className="bg-cyan-500 hover:bg-cyan-600 px-4 py-2 rounded-lg font-medium transition"
               >
-                Dashboard
+                Get Started
               </Link>
             </nav>
           </div>

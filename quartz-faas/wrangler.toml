@@ -1,7 +1,7 @@
 name = "quartz-faas"
 main = "build/index.js"
-compatibility_date = "2024-01-01"
-workers_dev = true
+compatibility_date = "2026-04-01"
+workers_dev = false
 
 # Custom domain
 routes = [
@@ -26,9 +26,18 @@ script_name = "quartz-faas"
 tag = "v1"
 new_sqlite_classes = ["StorageObject", "VectorIndexObject"]
 
-# Analytics Engine Configuration (disabled - requires manual enablement in dashboard)
-# [[analytics_engine_datasets]]
-# binding = "ANALYTICS"
+# Analytics Engine Configuration
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+
+# Required secrets (set via `wrangler secret put`):
+#   QUARTZ_API_KEY         - Admin/dev API key
+#   STRIPE_WEBHOOK_SECRET  - Stripe webhook signing secret
+
+# KV Namespace for tenant/billing data
+[[kv_namespaces]]
+binding = "TENANT_KV"
+id = "1ab986a3dbe841c7aa7179292cc22e4a"
 
 [env.production]
 name = "quartz-faas-prod"
@@ -43,3 +52,14 @@ script_name = "quartz-faas-prod"
 name = "VECTOR_INDEX"
 class_name = "VectorIndexObject"
 script_name = "quartz-faas-prod"
+
+# Production KV namespace
+[[env.production.kv_namespaces]]
+binding = "TENANT_KV"
+id = "e4d4cc8e04804eed963cd7c8563bfea1"
+
+[[env.production.analytics_engine_datasets]]
+binding = "ANALYTICS"
+
+[env.production.vars]
+CORS_ALLOWED_ORIGIN = "https://dashboard.quartzdb.io"

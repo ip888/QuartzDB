@@ -154,11 +154,12 @@ pub fn cosine_distance_simd(a: &[f32], b: &[f32]) -> f32 {
     }
 
     // Cosine similarity = dot / (||a|| * ||b||)
-    let denominator = norm_a_sum.sqrt() * norm_b_sum.sqrt();
-    if denominator == 0.0 {
-        return 1.0; // Maximum distance for zero-norm vectors
+    // Guard: if either vector is zero-length, treat as maximally distant (1.0)
+    let denom = norm_a_sum.sqrt() * norm_b_sum.sqrt();
+    if denom == 0.0 {
+        return 1.0;
     }
-    let similarity = dot_sum / denominator;
+    let similarity = dot_sum / denom;
 
     // Convert to distance (lower = more similar)
     1.0 - similarity
@@ -231,11 +232,12 @@ pub fn cosine_distance_simd(a: &[f32], b: &[f32]) -> f32 {
     let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
 
-    let denominator = norm_a * norm_b;
-    if denominator == 0.0 {
-        return 1.0; // Maximum distance for zero-norm vectors
+    // Guard: if either vector is zero-length, treat as maximally distant (1.0)
+    let denom = norm_a * norm_b;
+    if denom == 0.0 {
+        return 1.0;
     }
-    1.0 - (dot / denominator)
+    1.0 - (dot / denom)
 }
 
 /// Dot product distance (scalar fallback)
@@ -291,5 +293,21 @@ mod tests {
 
         let distance = dot_product_distance_simd(&a, &b);
         assert_eq!(distance, -10.0); // -(1+2+3+4)
+    }
+
+    #[test]
+    fn test_cosine_zero_vector_no_nan() {
+        let zero = vec![0.0, 0.0, 0.0, 0.0];
+        let normal = vec![1.0, 0.0, 0.0, 0.0];
+
+        // Zero vs normal → maximally distant (1.0), not NaN
+        let d1 = cosine_distance_simd(&zero, &normal);
+        assert!(!d1.is_nan(), "zero vs normal must not produce NaN");
+        assert!((d1 - 1.0).abs() < 0.0001);
+
+        // Zero vs zero → maximally distant (1.0), not NaN
+        let d2 = cosine_distance_simd(&zero, &zero);
+        assert!(!d2.is_nan(), "zero vs zero must not produce NaN");
+        assert!((d2 - 1.0).abs() < 0.0001);
     }
 }
