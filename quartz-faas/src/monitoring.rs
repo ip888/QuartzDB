@@ -90,6 +90,7 @@ pub struct RequestMetrics {
     pub status: u16,
     pub duration_ms: u128,
     pub timestamp: u64,
+    pub request_id: String,
 }
 
 impl RequestMetrics {
@@ -100,6 +101,7 @@ impl RequestMetrics {
             status: 0,
             duration_ms: 0,
             timestamp: crate::platform::now_ms() as u64,
+            request_id: generate_request_id(),
         }
     }
 
@@ -121,12 +123,13 @@ impl RequestMetrics {
         };
 
         console_log!(
-            "[{}] {} {} - {} ({}ms)",
+            "[{}] {} {} - {} ({}ms) [req:{}]",
             log_level,
             self.method,
             self.path,
             self.status,
-            self.duration_ms
+            self.duration_ms,
+            self.request_id
         );
     }
 
@@ -193,6 +196,16 @@ impl RequestMetrics {
         }
         Ok(())
     }
+}
+
+/// Generate a unique request ID for tracing and debugging.
+///
+/// Uses timestamp + random suffix for uniqueness without external crate dependency.
+/// Format: "req-{timestamp_hex}-{random_hex}" (e.g., "req-18a3f2b1c-a7e3b2d1")
+pub fn generate_request_id() -> String {
+    let timestamp = crate::platform::now_ms() as u64;
+    let random = (crate::platform::random_f64() * u32::MAX as f64) as u32;
+    format!("req-{:x}-{:08x}", timestamp, random)
 }
 
 /// Timer for measuring operation duration using JS Date

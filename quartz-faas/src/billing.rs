@@ -141,6 +141,7 @@ impl BillingManager {
             .expiration_ttl(USAGE_TTL_SECONDS)
             .execute()
             .await
+            .map_err(|e| Error::RustError(format!("kv execute: {e}")))
     }
 }
 
@@ -533,7 +534,7 @@ mod tests {
         let mac = crate::platform::hmac_sha256(secret.as_bytes(), signed.as_bytes());
         let sig_hex = crate::platform::hex_encode(&mac);
 
-        let sig_header = format!("t={ts},v1={sig_hex}");
+        let _sig_header = format!("t={ts},v1={sig_hex}");
 
         // Run the async function synchronously in a test
         // We can't easily test the full async function without a runtime,

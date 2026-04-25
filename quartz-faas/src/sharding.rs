@@ -43,9 +43,10 @@ pub struct ShardRouter {
 
 impl ShardRouter {
     /// Create router with specified number of shards
+    ///
+    /// If `shard_count` is 0, defaults to 1 to avoid division by zero.
     pub fn new(shard_count: usize) -> Self {
-        assert!(shard_count > 0, "Shard count must be positive");
-        Self { shard_count }
+        Self { shard_count: shard_count.max(1) }
     }
 
     /// Get shard ID for a given key
@@ -279,5 +280,14 @@ mod tests {
         let router = ShardRouter::new(10);
         assert_eq!(router.get_shard_name(0), "vector-index-0");
         assert_eq!(router.get_shard_name(9), "vector-index-9");
+    }
+    
+    #[test]
+    fn test_shard_zero_count_defaults_to_one() {
+        let router = ShardRouter::new(0);
+        assert_eq!(router.shard_count(), 1);
+        // Should still work without panic
+        let shard = router.get_shard("test-key");
+        assert_eq!(shard, 0);
     }
 }

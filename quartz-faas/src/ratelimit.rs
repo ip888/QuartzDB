@@ -99,6 +99,7 @@ impl TokenBucket {
 }
 
 /// Rate limiter managing multiple API keys
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RateLimiter {
     /// Token buckets per API key (or IP for anonymous)
@@ -107,6 +108,7 @@ pub struct RateLimiter {
     config: RateLimitConfig,
 }
 
+#[allow(dead_code)]
 impl RateLimiter {
     /// Create a new rate limiter with the given default configuration.
     pub fn new(config: RateLimitConfig) -> Self {

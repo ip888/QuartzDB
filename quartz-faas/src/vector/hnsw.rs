@@ -301,14 +301,16 @@ impl HnswIndex {
                 
                 // Add reverse link - need to handle pruning separately to avoid borrow issues
                 if let Some(neighbor_node) = self.nodes.get_mut(neighbor_id) {
-                    neighbor_node.connections[lc].insert(id.clone());
+                    if lc < neighbor_node.connections.len() {
+                        neighbor_node.connections[lc].insert(id.clone());
+                    }
                 }
             }
 
             // Prune overconnected neighbors (do this after all inserts to avoid borrow conflicts)
             for neighbor_id in &neighbors {
                 if let Some(neighbor_node) = self.nodes.get(neighbor_id) {
-                    if neighbor_node.connections[lc].len() > m {
+                    if lc < neighbor_node.connections.len() && neighbor_node.connections[lc].len() > m {
                         let pruned = self.prune_connections(neighbor_id, lc, m)?;
                         if let Some(neighbor_node_mut) = self.nodes.get_mut(neighbor_id) {
                             neighbor_node_mut.connections[lc] = pruned.into_iter().collect();

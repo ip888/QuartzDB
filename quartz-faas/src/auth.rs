@@ -52,25 +52,35 @@ pub fn extract_api_key(req: &Request) -> Result<Option<String>> {
 /// 1. QUARTZ_API_KEY secret (single key for now)
 /// 2. Future: QUARTZ_API_KEYS (comma-separated list)
 ///
+/// Uses constant-time comparison to prevent timing side-channel attacks.
+///
 /// Returns Ok(()) if valid, Err if invalid
 pub fn validate_api_key(key: &str, env: &Env) -> Result<()> {
-    // Check against primary API key
+    // Check against primary API key using constant-time comparison
     if let Ok(expected_key) = env.secret("QUARTZ_API_KEY") {
-        if key == expected_key.to_string() {
+        if constant_time_eq(key.as_bytes(), expected_key.to_string().as_bytes()) {
             return Ok(());
         }
     }
     
-    // Future: Check against multiple keys (QUARTZ_API_KEYS)
-    // if let Ok(keys_csv) = env.secret("QUARTZ_API_KEYS") {
-    //     for expected in keys_csv.to_string().split(',') {
-    //         if key == expected.trim() {
-    //             return Ok(());
-    //         }
-    //     }
-    // }
-    
     Err(Error::RustError("Invalid API key".to_string()))
+}
+
+/// Constant-time byte comparison to prevent timing side-channel attacks.
+///
+/// Returns true if both slices are equal, false otherwise.
+/// Always compares all bytes regardless of where the first difference is,
+/// preventing attackers from guessing the API key byte-by-byte.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    
+    let mut result: u8 = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
 }
 
 /// Check if path requires authentication
@@ -170,5 +180,26 @@ mod tests {
         // Non-tenant keys don't have the prefix
         let admin_key = "sk_live_admin_key";
         assert!(!admin_key.starts_with("qdb_"));
+    }
+    
+    #[test]
+    fn test_constant_time_eq_equal() {
+        assert!(constant_time_eq(b"secret_key_123", b"secret_key_123"));
+        assert!(constant_time_eq(b"", b""));
+        assert!(constant_time_eq(b"a", b"a"));
+    }
+    
+    #[test]
+    fn test_constant_time_eq_not_equal() {
+        assert!(!constant_time_eq(b"secret_key_123", b"wrong_key_456"));
+        assert!(!constant_time_eq(b"short", b"longer_string"));
+        assert!(!constant_time_eq(b"abc", b"abd"));
+    }
+    
+    #[test]
+    fn test_constant_time_eq_length_mismatch() {
+        assert!(!constant_time_eq(b"abc", b"ab"));
+        assert!(!constant_time_eq(b"a", b""));
+        assert!(!constant_time_eq(b"", b"a"));
     }
 }

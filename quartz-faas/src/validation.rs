@@ -6,7 +6,7 @@
 //! - ID: 1-256 characters, alphanumeric + underscore + hyphen
 //! - Vector: 1-4096 dimensions, all finite f32 values
 //! - Metadata: <32KB JSON
-/// - k (search): 1-100
+//! - k (search): 1-100
 //!
 //! ## KV Operations
 //! - Key: 1-512 characters
@@ -31,6 +31,9 @@ pub const MAX_SEARCH_K: usize = 100;
 
 /// Maximum key length for KV
 pub const MAX_KEY_LENGTH: usize = 512;
+
+/// Maximum request body size (1MB)
+pub const MAX_REQUEST_BODY_SIZE: usize = 1024 * 1024;
 
 /// Validate vector ID
 ///

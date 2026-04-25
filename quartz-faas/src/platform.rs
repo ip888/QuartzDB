@@ -81,10 +81,7 @@ pub fn random_f64() -> f64 {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos() as u64;
-            // Mix in thread-id bits for uniqueness across threads.
-            let tid = std::thread::current().id();
-            let tid_bits: u64 = tid.as_u64().get();
-            t ^ tid_bits ^ 0x9e3779b97f4a7c15
+            t ^ 0x9e3779b97f4a7c15
         });
     }
     SEED.with(|s| {
@@ -202,6 +199,7 @@ pub fn sha256(msg: &[u8]) -> [u8; 32] {
 }
 
 /// Hex-encode a SHA-256 digest.
+#[allow(dead_code)]
 pub fn sha256_hex(input: &str) -> String {
     sha256(input.as_bytes())
         .iter()

@@ -276,6 +276,17 @@ mod tests {
     }
 
     #[test]
+    fn test_cosine_distance_zero_norm() {
+        let a = vec![0.0, 0.0, 0.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0, 0.0];
+
+        let distance = cosine_distance_simd(&a, &b);
+        // Should return 1.0 (max distance) instead of NaN for zero-norm vectors
+        assert!(!distance.is_nan(), "Distance should not be NaN for zero-norm vectors");
+        assert!((distance - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
     fn test_dot_product() {
         let a = vec![1.0, 2.0, 3.0, 4.0];
         let b = vec![1.0, 1.0, 1.0, 1.0];

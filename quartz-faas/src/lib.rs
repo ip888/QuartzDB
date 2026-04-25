@@ -180,6 +180,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let method = req.method().to_string();
     let path = req.path();
     let mut metrics = RequestMetrics::new(method.clone(), path.clone());
+    let request_id = metrics.request_id.clone();
     let timer = Timer::new();
     
     // Clone env for analytics (router consumes original env)
@@ -194,7 +195,21 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     // Handle CORS preflight
     if method == "OPTIONS" {
         return Response::ok("")
-            .map(|r| add_cors_headers_with_origin(r, &cors_origin));
+            .map(|r| finalize_response(r, &cors_origin, &request_id));
+    }
+    
+    // Reject oversized request bodies to prevent memory exhaustion
+    if let Ok(Some(content_length)) = req.headers().get("Content-Length") {
+        if let Ok(size) = content_length.parse::<usize>() {
+            if size > MAX_REQUEST_BODY_SIZE {
+                metrics.finish(413, timer.elapsed_ms());
+                metrics.log();
+                let _ = metrics.track(&env_clone);
+                
+                return Response::error("Request body too large (max 1MB)", 413)
+                    .map(|r| finalize_response(r, &cors_origin, &request_id));
+            }
+        }
     }
     
     // Rate limiting check (before auth, uses IP or API key)
@@ -206,7 +221,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             
             return Response::error("Too Many Requests", 429)
                 .map(|r| {
-                    let mut r = add_cors_headers_with_origin(r, &cors_origin);
+                    let mut r = finalize_response(r, &cors_origin, &request_id);
                     let _ = r.headers_mut().set("Retry-After", "60");
                     r
                 });
@@ -227,7 +242,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                     metrics.log();
                     let _ = metrics.track(&env_clone);
                     return Response::error("Unauthorized: Invalid or missing API key", 401)
-                        .map(|r| add_cors_headers_with_origin(r, &cors_origin));
+                        .map(|r| finalize_response(r, &cors_origin, &request_id));
                 }
             }
             Some(_) => {
@@ -238,7 +253,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 metrics.log();
                 let _ = metrics.track(&env_clone);
                 return Response::error("Unauthorized: Missing API key", 401)
-                    .map(|r| add_cors_headers_with_origin(r, &cors_origin));
+                    .map(|r| finalize_response(r, &cors_origin, &request_id));
             }
         }
     }
@@ -731,8 +746,18 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     // The _ = ignores Result because monitoring failures shouldn't affect user request
     let _ = metrics.track(&env_clone);
 
-    // Add CORS headers to all responses (configured via CORS_ALLOWED_ORIGIN env var)
-    response.map(|r| add_cors_headers_with_origin(r, &cors_origin))
+    // Add CORS/security headers and X-Request-ID to all responses
+    response.map(|r| finalize_response(r, &cors_origin, &request_id))
+}
+
+/// Apply all response headers (CORS, security, tracing) to a response.
+///
+/// Single helper used by all code paths — early returns and the final router
+/// response — so every response carries a consistent set of headers.
+fn finalize_response(response: Response, cors_origin: &str, request_id: &str) -> Response {
+    let mut r = add_cors_headers_with_origin(response, cors_origin);
+    let _ = r.headers_mut().set("X-Request-ID", request_id);
+    r
 }
 
 /// Legacy CORS wrapper — intentional no-op
@@ -745,13 +770,30 @@ fn add_cors_headers(response: Response) -> Response {
     response
 }
 
-/// Add CORS headers with configurable origin
+/// Add CORS and security headers with configurable origin
+///
+/// Called once at the outermost layer so headers are applied exactly once.
 fn add_cors_headers_with_origin(mut response: Response, allowed_origin: &str) -> Response {
     let headers = response.headers_mut();
+    
+    // CORS headers
     let _ = headers.set("Access-Control-Allow-Origin", allowed_origin);
     let _ = headers.set("Vary", "Origin");
     let _ = headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    let _ = headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
+    let _ = headers.set(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-API-Key, X-Request-ID"
+    );
     let _ = headers.set("Access-Control-Max-Age", "86400");
+    let _ = headers.set("Access-Control-Expose-Headers", "X-Request-ID");
+    
+    // Security headers
+    let _ = headers.set("X-Content-Type-Options", "nosniff");
+    let _ = headers.set("X-Frame-Options", "DENY");
+    let _ = headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    let _ = headers.set("X-XSS-Protection", "1; mode=block");
+    let _ = headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    let _ = headers.set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+    
     response
 }
